@@ -1876,33 +1876,12 @@ function openScoreModal(id, prefillGames){
   const m=state.matches.find(x=>x.id===id); if(!m) return;
   if(!requireScorer(m.tournament_id)) return;
   const bo=bestOf(m), pts=m.points||21, need=needGames(m);
+  // games kept in memory; nothing is written to the DB until the whole match is confirmed & saved
   const prev=prefillGames||gamesOf(m);
-  const rows=Array.from({length:bo},(_,i)=>prev[i]||{s1:'',s2:''});
-  openModal(`
-    <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
-    <div class="modal-body">
-      <div class="err" id="sErr"></div>
-      <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game (deuce at ${pts-1}–${pts-1}: win by 2)</p>
-      <div class="gamegrid">
-        <span></span>
-        <div class="glbl a">${esc(team(m.team1_p1,m.team1_p2))}</div>
-        <div class="glbl b">${esc(team(m.team2_p1,m.team2_p2))}</div>
-        ${rows.map((g,i)=>`
-          <span class="gnum">Game ${i+1}</span>
-          <input class="gin g1" data-i="${i}" type="number" inputmode="numeric" min="0" max="99" value="${g.s1??''}" placeholder="0">
-          <input class="gin g2" data-i="${i}" type="number" inputmode="numeric" min="0" max="99" value="${g.s2??''}" placeholder="0">`).join('')}
-      </div>
-      <div id="tally" class="tallyline"></div>
-      <p class="subtle" style="text-align:center;margin:2px 0 2px">Leave a game blank if it wasn't played.</p>
-      <div class="modal-foot">
-        ${m.status==='completed'?`<button class="btn danger" id="clearScore">Clear</button>`:`<button class="btn" data-close>Cancel</button>`}
-        <button class="btn primary" id="saveScore">${I.check}Save result</button>
-      </div>
-    </div>`);
-  const readGames=()=>{ const gs=[]; for(let i=0;i<bo;i++){ const a=modalEl.querySelector('.g1[data-i="'+i+'"]').value, b=modalEl.querySelector('.g2[data-i="'+i+'"]').value; if(a!==''&&b!==''){ gs.push({s1:parseInt(a,10), s2:parseInt(b,10)}); } } return gs; };
-  const updateTally=()=>{ const gs=readGames(); let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else if(w===2)b++; }); const el=modalEl.querySelector('#tally'); el.textContent = gs.length? ('Games won:  '+a+' – '+b) : ''; el.style.color = (Math.max(a,b)>=need)?'var(--win)':'var(--text2)'; };
-  modalEl.querySelectorAll('.gin').forEach(inp=>inp.addEventListener('input',updateTally)); updateTally();
-  // Step 2: confirm the summary, then commit (and auto-advance to the next pending match)
+  const games=prev.map(g=>({s1:g.s1, s2:g.s2}));
+  const tallyOf=(n)=>{ let a=0,b=0; for(let i=0;i<n && i<games.length;i++){ const w=gameWin(games[i],pts); if(w===1)a++; else if(w===2)b++; } return {a,b}; };
+
+  // Final overall confirm (result summary) → commit the whole match + auto-advance to the next pending match
   const showConfirm=(gs)=>{
     let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else b++; });
     const t1=team(m.team1_p1,m.team1_p2), t2=team(m.team2_p1,m.team2_p2);
@@ -1931,30 +1910,68 @@ function openScoreModal(id, prefillGames){
           <button class="btn primary" id="confirmSave">${I.check}Confirm &amp; save</button>
         </div>
       </div>`);
-    modalEl.querySelector('#backScore').onclick=()=>openScoreModal(id, gs);   // back to editing, scores kept
+    modalEl.querySelector('#backScore').onclick=()=>step(gs.length-1);   // back to the deciding game, scores kept
     modalEl.querySelector('#confirmSave').onclick=async()=>{
       if(!actor()){ openUserModal(commit); return; }   // ask name once, then save with attribution
       await commit();
     };
   };
-  modalEl.querySelector('#saveScore').onclick=()=>{
-    const err=modalEl.querySelector('#sErr'); const gs=readGames();
-    if(!gs.length){ err.textContent='Enter at least one game score.'; err.classList.add('show'); return; }
-    for(let i=0;i<gs.length;i++){ const g=gs[i];
-      if(isNaN(g.s1)||isNaN(g.s2)){ err.textContent='Fill both scores in each game you enter.'; err.classList.add('show'); return; }
-      if(g.s1===g.s2){ err.textContent=`Game ${i+1} can't be tied — each game needs a winner.`; err.classList.add('show'); return; }
-      const hi=Math.max(g.s1,g.s2), lo=Math.min(g.s1,g.s2);
-      if(hi < pts){ err.textContent=`Game ${i+1} isn't finished — a game is played to ${pts} points (the winner must reach ${pts}).`; err.classList.add('show'); return; }
-      if(hi-lo < 2){ err.textContent=`Game ${i+1} isn't finished — at ${pts-1}–${pts-1} it's deuce; you must win by 2 (e.g. ${pts+1}–${pts-1}).`; err.classList.add('show'); return; } }
-    let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else b++; });
-    if(Math.max(a,b)<need){ err.textContent='Best of '+bo+': a team needs to win '+need+' games. Enter the remaining game(s).'; err.classList.add('show'); return; }
-    showConfirm(gs);   // validation passed → confirm before committing
+
+  // Record ONE game at a time; advance on confirm until a team takes the match (games held in memory only)
+  const step=(gi)=>{
+    const cur=games[gi]||{s1:'',s2:''};
+    openModal(`
+      <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)} · Game ${gi+1}</h3><button class="x" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="err" id="sErr"></div>
+        <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game (deuce at ${pts-1}–${pts-1}: win by 2)</p>
+        <div class="gamegrid">
+          <span></span>
+          <div class="glbl a">${esc(team(m.team1_p1,m.team1_p2))}</div>
+          <div class="glbl b">${esc(team(m.team2_p1,m.team2_p2))}</div>
+          <span class="gnum">Game ${gi+1}</span>
+          <input class="gin g1" type="number" inputmode="numeric" min="0" max="99" value="${cur.s1??''}" placeholder="0">
+          <input class="gin g2" type="number" inputmode="numeric" min="0" max="99" value="${cur.s2??''}" placeholder="0">
+        </div>
+        <div id="tally" class="tallyline"></div>
+        <div class="modal-foot">
+          ${ gi>0 ? `<button class="btn" id="backScore">Back</button>`
+                  : (m.status==='completed' ? `<button class="btn danger" id="clearScore">Clear</button>` : `<button class="btn" data-close>Cancel</button>`) }
+          <button class="btn primary" id="saveScore">${I.check}<span id="saveLbl">Confirm &amp; next game</span></button>
+        </div>
+      </div>`);
+    const g1=modalEl.querySelector('.g1'), g2=modalEl.querySelector('.g2');
+    const refresh=()=>{
+      const base=tallyOf(gi); let a=base.a, b=base.b;
+      const w=(g1.value!==''&&g2.value!=='')?gameWin({s1:parseInt(g1.value,10),s2:parseInt(g2.value,10)},pts):0;
+      if(w===1)a++; else if(w===2)b++;
+      const decided=w&&Math.max(a,b)>=need, last=(gi===bo-1);
+      const tEl=modalEl.querySelector('#tally');
+      tEl.textContent='Games won:  '+a+' – '+b;
+      tEl.style.color=(Math.max(a,b)>=need)?'var(--win)':'var(--text2)';
+      modalEl.querySelector('#saveLbl').innerHTML=(decided||last)?'Confirm &amp; save result':'Confirm &amp; next game';
+    };
+    g1.addEventListener('input',refresh); g2.addEventListener('input',refresh); refresh();
+    if(modalEl.querySelector('#backScore')) modalEl.querySelector('#backScore').onclick=()=>step(gi-1);   // previous game, score kept
+    modalEl.querySelector('#saveScore').onclick=()=>{
+      const err=modalEl.querySelector('#sErr'); const s1=parseInt(g1.value,10), s2=parseInt(g2.value,10);
+      if(g1.value===''||g2.value===''||isNaN(s1)||isNaN(s2)){ err.textContent='Fill both scores for this game.'; err.classList.add('show'); return; }
+      if(s1===s2){ err.textContent=`Game ${gi+1} can't be tied — each game needs a winner.`; err.classList.add('show'); return; }
+      const hi=Math.max(s1,s2), lo=Math.min(s1,s2);
+      if(hi < pts){ err.textContent=`Game ${gi+1} isn't finished — a game is played to ${pts} points (the winner must reach ${pts}).`; err.classList.add('show'); return; }
+      if(hi-lo < 2){ err.textContent=`Game ${gi+1} isn't finished — at ${pts-1}–${pts-1} it's deuce; you must win by 2 (e.g. ${pts+1}–${pts-1}).`; err.classList.add('show'); return; }
+      games[gi]={s1,s2};
+      const {a,b}=tallyOf(gi+1);
+      if(Math.max(a,b)>=need){ games.length=gi+1; showConfirm(games.slice()); }   // match decided — stop asking, go to the final confirm
+      else step(gi+1);                                                             // otherwise, next game
+    };
+    modalEl.querySelector('#clearScore')?.addEventListener('click',async()=>{
+      const commit=async()=>{ try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){} };
+      if(!actor()){ openUserModal(commit); return; }
+      await commit();
+    });
   };
-  modalEl.querySelector('#clearScore')?.addEventListener('click',async()=>{
-    const commit=async()=>{ try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){} };
-    if(!actor()){ openUserModal(commit); return; }
-    await commit();
-  });
+  step(0);
 }
 
 function openTournamentModal(id){
