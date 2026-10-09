@@ -78,6 +78,11 @@ a{color:var(--accent-ink)}
 .conn.live .dot{background:var(--accent)}
 .conn.local{color:var(--text2);background:var(--surface2)}
 .conn.local .dot{background:var(--gold)}
+.conn.user{cursor:pointer;color:var(--text2);background:var(--surface2)}
+.conn.user:hover{color:var(--text);background:var(--border)}
+.conn.user .dot{background:var(--muted)}
+.conn.user.named{color:var(--accent-ink);background:var(--accent-bg)}
+.conn.user.named .dot{background:var(--accent)}
 
 /* ---------- tabs ---------- */
 .tabs{position:sticky;top:calc(var(--head-h) + env(safe-area-inset-top,0px));z-index:30;background:var(--bg);border-bottom:1px solid var(--border);display:flex;gap:2px;padding:0 clamp(10px,3vw,24px);overflow-x:auto}
@@ -99,7 +104,17 @@ a{color:var(--accent-ink)}
 .searchbox{width:100%;padding:10px 13px;border:1px solid var(--border);border-radius:10px;background:var(--surface);font-size:14px;margin-bottom:10px;color:var(--text)}
 .searchbox:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-bg)}
 .searchbox::placeholder{color:var(--muted)}
-@media(max-width:600px){ .toolbar .spacer{display:none} .tab{padding:12px 11px;font-size:13.5px} .tab svg{width:15px;height:15px} }
+@media(max-width:600px){
+  .toolbar .spacer{display:none} .tab{padding:12px 11px;font-size:13.5px} .tab svg{width:15px;height:15px}
+  /* header scrolls away; the tab bar stays pinned to the top for easy navigation */
+  .header{position:static}
+  .tabs{top:0;box-shadow:0 2px 6px rgba(16,24,40,.06)}
+  .brand .sub{display:none}
+  .brand h1{font-size:16px}
+  .brand .logo{width:30px;height:30px}
+  .header{min-height:0;padding:10px 14px;gap:8px 10px}
+  .tsel select{max-width:52vw}
+}
 
 /* ---------- buttons ---------- */
 .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 15px;border-radius:10px;font-weight:700;font-size:14px;background:var(--surface);border:1px solid var(--border);color:var(--text);transition:.12s;white-space:nowrap}
@@ -318,6 +333,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .gamedetail{order:5;flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:9px;margin-top:4px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums}
 .gamedetail .g{font-weight:800;color:var(--text2);font-size:12.5px}
 .gamedetail .fmt{margin-left:auto;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:11px}
+.gamedetail .byline{color:var(--muted);font-weight:600;font-size:11px;display:inline-flex;align-items:center;gap:4px}
+.gamedetail .byline svg{width:11px;height:11px}
 @media(max-width:600px){ .gamedetail .fmt{margin-left:0} }
 /* stage + fixture blocks */
 .stageblock{margin-bottom:28px}
@@ -409,6 +426,7 @@ th.sortable:hover{color:var(--text)}
       <select id="tournamentSel"></select>
     </div>
     <span id="connPill" class="conn local" title="Data source"><span class="dot"></span><span id="connText">Local</span></span>
+    <button id="userPill" class="conn user" title="Set your name — used to label who edits scores"><span class="dot"></span><span id="userText">Set name</span></button>
     <button class="iconbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
   </div>
 </header>
@@ -465,6 +483,32 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-
 const nowISO = () => new Date().toISOString();
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* ---------- who's editing (name stamp, per device, no password) ---------- */
+const USER_KEY='bad_user';
+function getUser(){ try{ return (localStorage.getItem(USER_KEY)||'').trim(); }catch(e){ return ''; } }
+function setUser(n){ try{ localStorage.setItem(USER_KEY,(n||'').trim()); }catch(e){} }
+const stampBy = () => ({ updated_by:getUser()||null, updated_at:nowISO() });
+function relTime(iso){ if(!iso) return ''; const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
+  if(s<45) return 'just now'; if(s<90) return '1m ago';
+  const m=s/60; if(m<60) return Math.round(m)+'m ago';
+  const h=m/60; if(h<24) return Math.round(h)+'h ago';
+  const d=h/24; if(d<7) return Math.round(d)+'d ago';
+  try{ return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; } }
+function renderUserPill(){ const el=document.getElementById('userText'); if(!el) return; const u=getUser(); el.textContent=u||'Set name'; document.getElementById('userPill')?.classList.toggle('named',!!u); }
+function openUserModal(afterSet){
+  const cur=getUser();
+  openModal(`<div class="modal-head"><h3>Your name</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-body">
+      <p class="subtle" style="font-size:13.5px;margin-bottom:12px">Shown as who recorded or edited a score. Saved on this device only — no password.</p>
+      <div class="field"><label>Name</label><input id="uName" placeholder="e.g. Ankit" value="${esc(cur)}" maxlength="40"></div>
+      <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="uSave">Save</button></div>
+    </div>`);
+  const inp=modalEl.querySelector('#uName'); setTimeout(()=>inp.focus(),60);
+  const save=()=>{ const n=inp.value.trim(); if(!n){ inp.focus(); return; } setUser(n); closeModal(); renderUserPill(); if(typeof afterSet==='function') afterSet(); };
+  modalEl.querySelector('#uSave').onclick=save;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
+}
+
 /* ---------- images: pick, resize/compress, avatar rendering ---------- */
 function pickImage(){ return new Promise(res=>{ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.style.position='fixed'; i.style.left='-9999px'; document.body.appendChild(i); i.onchange=()=>{ const f=(i.files&&i.files[0])||null; i.remove(); res(f); }; i.click(); }); }
 function resizeImage(file,max,quality,square){ return new Promise((resolve,reject)=>{ const img=new Image(); const url=URL.createObjectURL(file); img.onload=()=>{ let sw=img.width,sh=img.height,sx=0,sy=0; if(square){ const m=Math.min(sw,sh); sx=(sw-m)/2; sy=(sh-m)/2; sw=sh=m; } let dw=sw,dh=sh; if(Math.max(dw,dh)>max){ const s=max/Math.max(dw,dh); dw=Math.round(dw*s); dh=Math.round(dh*s); } const c=document.createElement('canvas'); c.width=dw; c.height=dh; const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,dw,dh); ctx.drawImage(img,sx,sy,sw,sh,0,0,dw,dh); URL.revokeObjectURL(url); try{ resolve(c.toDataURL('image/jpeg',quality||0.82)); }catch(e){ reject(e); } }; img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); }; img.src=url; }); }
@@ -498,15 +542,16 @@ function seedData(){
     team1:PLAYER_TEAM[m[2]]||null, team2:PLAYER_TEAM[m[4]]||null,
     team1_p1:m[2], team1_p2:m[3], team2_p1:m[4], team2_p2:m[5],
     score1:null, score2:null, status:'scheduled', created_at:nowISO() }));
-  const teams = TEAM_SEED.map(x=>({ name:x.name, color:x.color, created_at:nowISO() }));
-  const players = {}; Object.entries(PLAYER_TEAM).forEach(([n,tm])=>{ players[n]={ name:n, avatar_url:null, team:tm }; });
-  return { tournaments:[t], matches, teams, players };
+  const teams = TEAM_SEED.map(x=>({ tournament_id:tid, name:x.name, color:x.color, captain:null, created_at:nowISO() }));
+  const players = {}; Object.keys(PLAYER_TEAM).forEach(n=>{ players[n]={ name:n, avatar_url:null }; });
+  const rosters = Object.entries(PLAYER_TEAM).map(([player,team])=>({ tournament_id:tid, player, team }));
+  return { tournaments:[t], matches, teams, players, rosters };
 }
 
 /* ================================================================
    STORE — unified async API over Supabase OR localStorage
    ================================================================ */
-const LS_T='bad_tracker_tournaments', LS_M='bad_tracker_matches', LS_P='bad_tracker_players', LS_TM='bad_tracker_teams';
+const LS_T='bad_tracker_tournaments', LS_M='bad_tracker_matches', LS_P='bad_tracker_players', LS_TM='bad_tracker_teams', LS_R='bad_tracker_rosters';
 const store = {
   async init(){
     if(useDB) return;
@@ -516,6 +561,7 @@ const store = {
       localStorage.setItem(LS_M, JSON.stringify(s.matches));
       localStorage.setItem(LS_P, JSON.stringify(s.players));
       localStorage.setItem(LS_TM, JSON.stringify(s.teams));
+      localStorage.setItem(LS_R, JSON.stringify(s.rosters));
     }
   },
   _lsT(){ try{return JSON.parse(localStorage.getItem(LS_T)||'[]')}catch(e){return []} },
@@ -540,6 +586,8 @@ const store = {
     if(useDB){ await sb.from('matches').delete().eq('tournament_id',id); const {error}=await sb.from('tournaments').delete().eq('id',id); if(error)throw error; return; }
     this._saveT(this._lsT().filter(t=>t.id!==id));
     this._saveM(this._lsM().filter(m=>m.tournament_id!==id));
+    this._saveTM(this._lsTM().filter(t=>t.tournament_id!==id));
+    this._saveR(this._lsR().filter(r=>r.tournament_id!==id));
   },
   async getMatches(){
     if(useDB){ const {data,error}=await sb.from('matches').select('*').order('match_no'); if(error)throw error; return data||[]; }
@@ -550,7 +598,8 @@ const store = {
       best_of:m.best_of||3, points:m.points||21, games:m.games||[],
       team1:m.team1||null, team2:m.team2||null,
       team1_p1:m.team1_p1, team1_p2:m.team1_p2, team2_p1:m.team2_p1, team2_p2:m.team2_p2,
-      score1:m.score1??null, score2:m.score2??null, status:m.status||'scheduled', created_at:nowISO() };
+      score1:m.score1??null, score2:m.score2??null, status:m.status||'scheduled',
+      updated_by:m.updated_by||null, updated_at:m.updated_at||null, created_at:nowISO() };
     if(useDB){ const {data,error}=await sb.from('matches').insert(rec).select().single(); if(error)throw error; return data; }
     rec.id=uid(); const a=this._lsM(); a.push(rec); this._saveM(a); return rec;
   },
@@ -572,30 +621,41 @@ const store = {
   },
   _lsP(){ try{return JSON.parse(localStorage.getItem(LS_P)||'{}')}catch(e){return {}} },
   _saveP(o){ try{localStorage.setItem(LS_P,JSON.stringify(o)); return true;}catch(e){return false;} },
+  _lsR(){ try{return JSON.parse(localStorage.getItem(LS_R)||'[]')}catch(e){return []} },
+  _saveR(a){ try{localStorage.setItem(LS_R,JSON.stringify(a))}catch(e){} },
   async getPlayers(){
-    if(useDB){ const {data,error}=await sb.from('players').select('*'); if(error){console.warn('players:',error.message);return {};} const o={}; (data||[]).forEach(p=>o[p.name]={name:p.name,avatar_url:p.avatar_url,team:p.team||null}); return o; }
-    return this._lsP();
+    if(useDB){ const {data,error}=await sb.from('players').select('name,avatar_url'); if(error){console.warn('players:',error.message);return {};} const o={}; (data||[]).forEach(p=>o[p.name]={name:p.name,avatar_url:p.avatar_url}); return o; }
+    const o=this._lsP(); Object.values(o).forEach(p=>{ delete p.team; }); return o;
+  },
+  // per-tournament roster membership (one row per player per tournament; team may be null)
+  async getRosters(){
+    if(useDB){ const {data,error}=await sb.from('rosters').select('*'); if(error){console.warn('rosters:',error.message);return [];} return data||[]; }
+    return this._lsR();
   },
   async setPlayerAvatar(name,url){
     if(useDB){ const {error}=await sb.from('players').upsert({name,avatar_url:url},{onConflict:'name'}); if(error)throw error; return; }
-    const o=this._lsP(); o[name]=Object.assign({name,avatar_url:null,team:null},o[name],{avatar_url:url}); if(!this._saveP(o)) throw new Error('Image too large for on-device mode. Connect Supabase to store photos.');
+    const o=this._lsP(); o[name]=Object.assign({name,avatar_url:null},o[name],{avatar_url:url}); if(!this._saveP(o)) throw new Error('Image too large for on-device mode. Connect Supabase to store photos.');
   },
-  async setPlayerTeam(name,team){
-    if(useDB){ const {error}=await sb.from('players').upsert({name,team:team||null},{onConflict:'name'}); if(error)throw error; return; }
-    const o=this._lsP(); o[name]=Object.assign({name,avatar_url:null,team:null},o[name],{team:team||null}); this._saveP(o);
+  async setRoster(tid,player,team){
+    if(useDB){ const {error}=await sb.from('rosters').upsert({tournament_id:tid,player,team:team||null},{onConflict:'tournament_id,player'}); if(error)throw error; return; }
+    const a=this._lsR(); const i=a.findIndex(r=>r.tournament_id===tid&&r.player===player); if(i>=0) a[i].team=team||null; else a.push({tournament_id:tid,player,team:team||null}); this._saveR(a);
   },
+  async setPlayerTeam(name,team){ return this.setRoster(state.tournamentId, name, team); },  // current tournament
   async addPlayer(name,team){
-    if(useDB){ const row=team?{name,team}:{name}; const {error}=await sb.from('players').upsert(row,{onConflict:'name',ignoreDuplicates:true}); if(error)throw error; return; }
-    const o=this._lsP(); if(!o[name]) o[name]={name,avatar_url:null,team:team||null}; this._saveP(o);
+    if(useDB){ const {error}=await sb.from('players').upsert({name},{onConflict:'name',ignoreDuplicates:true}); if(error)throw error; }
+    else { const o=this._lsP(); if(!o[name]) o[name]={name,avatar_url:null}; this._saveP(o); }
+    if(team) await this.setRoster(state.tournamentId, name, team);
   },
   async addPlayers(names){
     if(!names.length) return;
     if(useDB){ const {error}=await sb.from('players').upsert(names.map(n=>({name:n})),{onConflict:'name',ignoreDuplicates:true}); if(error)throw error; return; }
-    const o=this._lsP(); names.forEach(n=>{ if(!o[n]) o[n]={name:n,avatar_url:null,team:null}; }); this._saveP(o);
+    const o=this._lsP(); names.forEach(n=>{ if(!o[n]) o[n]={name:n,avatar_url:null}; }); this._saveP(o);
   },
   async removePlayer(name){
-    if(useDB){ const {error}=await sb.from('players').delete().eq('name',name); if(error)throw error; return; }
+    if(useDB){ const {error}=await sb.from('players').delete().eq('name',name); if(error)throw error; return; }  // rosters/captaincies clear via FKs
     const o=this._lsP(); delete o[name]; this._saveP(o);
+    this._saveR(this._lsR().filter(r=>r.player!==name));
+    this._saveTM(this._lsTM().map(t=>t.captain===name?{...t,captain:null}:t));
   },
   _lsTM(){ try{return JSON.parse(localStorage.getItem(LS_TM)||'[]')}catch(e){return []} },
   _saveTM(a){ try{localStorage.setItem(LS_TM,JSON.stringify(a))}catch(e){} },
@@ -603,19 +663,35 @@ const store = {
     if(useDB){ const {data,error}=await sb.from('teams').select('*').order('created_at'); if(error){console.warn('teams:',error.message);return [];} return data||[]; }
     return this._lsTM();
   },
-  async addTeam(name,color){
-    if(useDB){ const {error}=await sb.from('teams').upsert({name,color},{onConflict:'name'}); if(error)throw error; return; }
-    const a=this._lsTM(); if(!a.find(t=>t.name===name)) a.push({name,color,created_at:nowISO()}); this._saveTM(a);
+  async addTeam(tid,name,color){
+    if(useDB){ const {error}=await sb.from('teams').upsert({tournament_id:tid,name,color},{onConflict:'tournament_id,name'}); if(error)throw error; return; }
+    const a=this._lsTM(); if(!a.find(t=>t.tournament_id===tid&&t.name===name)) a.push({tournament_id:tid,name,color,captain:null,created_at:nowISO()}); this._saveTM(a);
   },
-  async updateTeam(name,patch){
-    if(useDB){ const {error}=await sb.from('teams').update(patch).eq('name',name); if(error)throw error;
-      if(patch.name&&patch.name!==name){ await sb.from('players').update({team:patch.name}).eq('team',name); } return; }
-    this._saveTM(this._lsTM().map(t=>t.name===name?{...t,...patch}:t));
-    if(patch.name&&patch.name!==name){ const o=this._lsP(); Object.values(o).forEach(p=>{ if(p.team===name) p.team=patch.name; }); this._saveP(o); }
+  async updateTeam(tid,name,patch){
+    if(useDB){ const {error}=await sb.from('teams').update(patch).eq('tournament_id',tid).eq('name',name); if(error)throw error; return; }  // rename cascades to rosters/matches via FK
+    this._saveTM(this._lsTM().map(t=>(t.tournament_id===tid&&t.name===name)?{...t,...patch}:t));
+    if(patch.name&&patch.name!==name){
+      this._saveR(this._lsR().map(r=>(r.tournament_id===tid&&r.team===name)?{...r,team:patch.name}:r));
+      this._saveM(this._lsM().map(m=>{ if(m.tournament_id!==tid) return m; const u={...m}; if(u.team1===name)u.team1=patch.name; if(u.team2===name)u.team2=patch.name; return u; }));
+    }
   },
-  async removeTeam(name){
-    if(useDB){ await sb.from('players').update({team:null}).eq('team',name); const {error}=await sb.from('teams').delete().eq('name',name); if(error)throw error; return; }
-    this._saveTM(this._lsTM().filter(t=>t.name!==name)); const o=this._lsP(); Object.values(o).forEach(p=>{ if(p.team===name) p.team=null; }); this._saveP(o);
+  async removeTeam(tid,name){
+    if(useDB){ const {error}=await sb.from('teams').delete().eq('tournament_id',tid).eq('name',name); if(error)throw error; return; }  // rosters/matches set null via FK
+    this._saveTM(this._lsTM().filter(t=>!(t.tournament_id===tid&&t.name===name)));
+    this._saveR(this._lsR().map(r=>(r.tournament_id===tid&&r.team===name)?{...r,team:null}:r));
+    this._saveM(this._lsM().map(m=>{ if(m.tournament_id!==tid) return m; const u={...m}; if(u.team1===name)u.team1=null; if(u.team2===name)u.team2=null; return u; }));
+  },
+  // copy a tournament's teams + rosters (incl. captains) into another tournament
+  async copyTeamsAndRosters(fromTid,toTid){
+    if(useDB){
+      const {data:ts}=await sb.from('teams').select('name,color,captain').eq('tournament_id',fromTid);
+      if(ts&&ts.length){ const {error}=await sb.from('teams').upsert(ts.map(t=>({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null})),{onConflict:'tournament_id,name'}); if(error)throw error; }
+      const {data:rs}=await sb.from('rosters').select('player,team').eq('tournament_id',fromTid);
+      if(rs&&rs.length){ const {error}=await sb.from('rosters').upsert(rs.map(r=>({tournament_id:toTid,player:r.player,team:r.team||null})),{onConflict:'tournament_id,player'}); if(error)throw error; }
+      return;
+    }
+    const tm=this._lsTM(); tm.filter(t=>t.tournament_id===fromTid).forEach(t=>{ if(!tm.find(x=>x.tournament_id===toTid&&x.name===t.name)) tm.push({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null,created_at:nowISO()}); }); this._saveTM(tm);
+    const ro=this._lsR(); ro.filter(r=>r.tournament_id===fromTid).forEach(r=>{ if(!ro.find(x=>x.tournament_id===toTid&&x.player===r.player)) ro.push({tournament_id:toTid,player:r.player,team:r.team||null}); }); this._saveR(ro);
   },
   // Returns the URL to persist. Supabase: uploads to Storage and returns a public URL. On-device: returns the data URL itself.
   async saveImage(dataUrl,path){
@@ -627,11 +703,11 @@ const store = {
 /* ================================================================
    STATE
    ================================================================ */
-const state = { tab:'dashboard', tournamentId:null, scope:'tournament', tournaments:[], matches:[], players:{}, teams:[] };
+const state = { tab:'dashboard', tournamentId:null, scope:'tournament', tournaments:[], matches:[], players:{}, teams:[], rosters:[] };
 
 async function loadAll(){
-  const [ts,ms,ps,tm] = await Promise.all([store.getTournaments(), store.getMatches(), store.getPlayers(), store.getTeams()]);
-  state.tournaments=ts; state.matches=ms; state.players=ps||{}; state.teams=tm||[];
+  const [ts,ms,ps,tm,rs] = await Promise.all([store.getTournaments(), store.getMatches(), store.getPlayers(), store.getTeams(), store.getRosters()]);
+  state.tournaments=ts; state.matches=ms; state.players=ps||{}; state.teams=tm||[]; state.rosters=rs||[];
   if(!state.tournamentId || !state.tournaments.find(t=>t.id===state.tournamentId)){
     const active = state.tournaments.find(t=>t.status==='active') || state.tournaments[0];
     state.tournamentId = active ? active.id : null;
@@ -659,20 +735,24 @@ function winnerOf(m){
   return a>b?1:(b>a?2:0);
 }
 
-// ---- teams (franchises) ----
-const teamOf = name => (state.players[name] && state.players[name].team) || null;
-const teamColor = t => { const x=state.teams.find(x=>x.name===t); return x?x.color:'#8a94a2'; };
-// ---- captains ---- a team's captain, but only if they're still on that team
-function captainOf(teamName){ const t=state.teams.find(x=>x.name===teamName); const c=t&&t.captain; return (c && teamOf(c)===teamName) ? c : null; }
-const isCaptain = name => state.teams.some(t=>t.captain===name && teamOf(name)===t.name);
+// ---- teams (franchises) — per-tournament ----
+const curTeams = () => state.teams.filter(t=>t.tournament_id===state.tournamentId);
+const teamsForTour = tid => state.teams.filter(t=>t.tournament_id===tid);
+// a player's team IN A GIVEN tournament (default: current). Players are global; membership is per-tournament.
+function teamOfIn(tid,name){ const r=state.rosters.find(x=>x.tournament_id===tid && x.player===name); return r ? (r.team||null) : null; }
+const teamOf = name => teamOfIn(state.tournamentId, name);
+const teamColor = t => { const x=curTeams().find(x=>x.name===t); return x?x.color:'#8a94a2'; };
+// ---- captains (per-tournament) ---- a team's captain, but only if they're still on that team
+function captainOf(teamName){ const t=curTeams().find(x=>x.name===teamName); const c=t&&t.captain; return (c && teamOf(c)===teamName) ? c : null; }
+const isCaptain = name => curTeams().some(t=>t.captain===name && teamOf(name)===t.name);
 async function setCaptainFlow(teamName, playerName){
-  const t=state.teams.find(x=>x.name===teamName); if(!t) return;
+  const t=curTeams().find(x=>x.name===teamName); if(!t) return;
   const cur=captainOf(teamName);
   let next, msg;
   if(cur===playerName){ next=null; msg=`Remove ${playerName} as captain of ${teamName}?`; }
   else { next=playerName; msg = cur ? `Make ${playerName} captain of ${teamName}, replacing ${cur}?` : null; }
   if(msg && !confirm(msg)) return;
-  try{ await store.updateTeam(teamName,{captain:next}); await loadAll(); render(); toast(next?`${playerName} is now captain`:'Captain removed'); }
+  try{ await store.updateTeam(state.tournamentId, teamName,{captain:next}); await loadAll(); render(); toast(next?`${playerName} is now captain`:'Captain removed'); }
   catch(e){ const m=(e&&e.message)||''; toast(/captain|column|schema/i.test(m)?'Run migrate4.sql on Supabase first':'Could not update captain'); }
 }
 function sideTeam(m, side){
@@ -811,7 +891,7 @@ function renderDashboard(el){
   const players=rosterNames(ms);
   const teamStats=computeTeamStats(ms);
   const statsMap=Object.fromEntries(stats.map(p=>[p.name,p]));
-  const captains=state.teams.map(tm=>{ const cap=captainOf(tm.name); if(!cap) return null;
+  const captains=curTeams().map(tm=>{ const cap=captainOf(tm.name); if(!cap) return null;
     const tRank=teamStats.findIndex(x=>x.name===tm.name); const tS=teamStats.find(x=>x.name===tm.name)||{won:0,lost:0};
     const pS=statsMap[cap]||{won:0,lost:0,played:0,pct:0}; return {team:tm.name,cap,tRank,tS,pS}; })
     .filter(Boolean).sort((a,b)=>(a.tRank<0?99:a.tRank)-(b.tRank<0?99:b.tRank));
@@ -824,17 +904,11 @@ function renderDashboard(el){
       ${t?`<span class="subtle">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</span>`:''}
     </div>
     ${!useDB?`<div class="banner" id="dbBanner"><span>${I.flame}</span><div><b>On-device mode.</b> Scores save in this browser only. Add your free Supabase keys (see README) to sync across everyone's phones.</div><span class="x" onclick="this.parentElement.remove()">✕</span></div>`:''}
-    <div class="tiles">
-      <div class="tile"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
-      <div class="tile"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
-      <div class="tile"><div class="k">${I.clock}Pending</div><div class="v num">${ms.length-done.length}</div></div>
-      <div class="tile"><div class="k">${I.trophy}Leader</div><div class="v disp" style="font-size:${leader?'20px':'18px'}">${leader?esc(leader.name):'—'}</div>${leader?`<div class="subtle" style="margin-top:2px">${leader.won}W · ${leader.lost}L</div>`:''}</div>
-    </div>
-    ${state.teams.length?`<div class="card pad" style="margin-bottom:16px">
+    ${curTeams().length?`<div class="card pad" style="margin-bottom:16px">
       <div class="card-title">${I.shield}Team Standings</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
         <table><thead><tr><th>#&nbsp;&nbsp;Team</th><th class="n">P</th><th class="n">W</th><th class="n">L</th><th>Win %</th><th class="n">Pts&nbsp;Diff</th></tr></thead>
-        <tbody>${state.teams.map(t=>t.name).map((tn,ix)=>{const ts=teamStats.find(x=>x.name===tn)||{played:0,won:0,lost:0,pct:0,diff:0};const rank=teamStats.findIndex(x=>x.name===tn);return {tn,ts,rank};}).sort((a,b)=>(a.rank<0?99:a.rank)-(b.rank<0?99:b.rank)).map(({tn,ts},i)=>`
+        <tbody>${curTeams().map(t=>t.name).map((tn,ix)=>{const ts=teamStats.find(x=>x.name===tn)||{played:0,won:0,lost:0,pct:0,diff:0};const rank=teamStats.findIndex(x=>x.name===tn);return {tn,ts,rank};}).sort((a,b)=>(a.rank<0?99:a.rank)-(b.rank<0?99:b.rank)).map(({tn,ts},i)=>`
           <tr><td><div class="rankcell"><span class="rankno ${i===0&&ts.played?'top':''}">${ts.played?i+1:'·'}</span>${teamChip(tn)}</div></td>
             <td class="n num">${ts.played}</td><td class="n num" style="color:${ts.won?'var(--win)':'var(--muted)'};font-weight:800">${ts.won}</td>
             <td class="n num" style="color:${ts.lost?'var(--danger)':'var(--muted)'}">${ts.lost}</td>
@@ -842,6 +916,12 @@ function renderDashboard(el){
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>`:''}
+    <div class="tiles">
+      <div class="tile"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
+      <div class="tile"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
+      <div class="tile"><div class="k">${I.clock}Pending</div><div class="v num">${ms.length-done.length}</div></div>
+      <div class="tile"><div class="k">${I.trophy}Leader</div><div class="v disp" style="font-size:${leader?'20px':'18px'}">${leader?esc(leader.name):'—'}</div>${leader?`<div class="subtle" style="margin-top:2px">${leader.won}W · ${leader.lost}L</div>`:''}</div>
+    </div>
     ${captains.length?`<div class="card pad" style="margin-bottom:16px">
       <div class="card-title">${I.trophy}Captains</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
@@ -853,7 +933,7 @@ function renderDashboard(el){
             <td class="n num">${c.pS.played?`${c.pS.won}–${c.pS.lost}`:'<span class="subtle">—</span>'}</td>
             <td>${c.pS.played?`<span class="num" style="font-weight:800">${Math.round(c.pS.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td></tr>`).join('')}</tbody></table>
       </div>
-    </div>`:(state.teams.length?`<div class="card pad" style="margin-bottom:16px"><div class="card-title">${I.trophy}Captains</div><p class="subtle">No captains set yet. On the <b>Teams</b> tab, tap the ★ next to a player to make them captain.</p></div>`:'')}
+    </div>`:(curTeams().length?`<div class="card pad" style="margin-bottom:16px"><div class="card-title">${I.trophy}Captains</div><p class="subtle">No captains set yet. On the <b>Teams</b> tab, tap the ★ next to a player to make them captain.</p></div>`:'')}
     <div class="grid2">
       <div class="card pad">
         <div class="card-title">Top Players</div>
@@ -953,7 +1033,7 @@ function matchRow(m){
       <button class="iconbtn" data-edit="${m.id}" title="Edit match (teams, stage)">${I.edit}</button>
       <button class="iconbtn" data-del="${m.id}" title="Delete match">${I.trash}</button>
     </div>
-    <div class="gamedetail">${(done&&gs.length)?gs.map(g=>`<span class="g">${g.s1}–${g.s2}</span>`).join(''):''}<span class="fmt">${fmt}</span></div>
+    <div class="gamedetail">${(done&&gs.length)?gs.map(g=>`<span class="g">${g.s1}–${g.s2}</span>`).join(''):''}${m.updated_by?`<span class="byline" title="Last edited by ${esc(m.updated_by)}">${I.edit}${esc(m.updated_by)} · ${relTime(m.updated_at)}</span>`:''}<span class="fmt">${fmt}</span></div>
   </div>`;
 }
 
@@ -983,7 +1063,7 @@ function renderPlayers(el){
     <div class="sectionhead"><h2>Players</h2><div class="spacer"></div>
       <div class="scope-seg" id="scopeSeg">
         <button data-scope="tournament" class="${state.scope==='tournament'?'on':''}">This tournament</button>
-        <button data-scope="all" class="${state.scope==='all'?'on':''}">All time</button>
+        <button data-scope="all" class="${state.scope==='all'?'on':''}">All tournaments</button>
       </div>
     </div>
     ${total? `
@@ -1102,15 +1182,15 @@ function openAddPlayerModal(){
     catch(e){ err.textContent='Could not add: '+(e.message||e); err.classList.add('show'); }
   };
 }
-function teamOptions(selected){ return `<option value="">— No team —</option>`+state.teams.map(t=>`<option value="${esc(t.name)}" ${t.name===selected?'selected':''}>${esc(t.name)}</option>`).join(''); }
+function teamOptions(selected){ return `<option value="">— No team —</option>`+curTeams().map(t=>`<option value="${esc(t.name)}" ${t.name===selected?'selected':''}>${esc(t.name)}</option>`).join(''); }
 
 function openTeamsModal(){
-  const counts={}; Object.values(state.players).forEach(p=>{ if(p.team) counts[p.team]=(counts[p.team]||0)+1; });
+  const counts={}; state.rosters.filter(r=>r.tournament_id===state.tournamentId && r.team).forEach(r=>{ counts[r.team]=(counts[r.team]||0)+1; });
   openModal(`
     <div class="modal-head"><h3>Teams</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="tmErr"></div>
-      <div id="teamList">${state.teams.length?state.teams.map(t=>`
+      <div id="teamList">${curTeams().length?curTeams().map(t=>`
         <div class="teamrow" data-team="${esc(t.name)}">
           <input type="color" class="tcolor" value="${(t.color||'#888888').slice(0,7)}" title="Team colour">
           <input class="tname" value="${esc(t.name)}">
@@ -1129,16 +1209,16 @@ function openTeamsModal(){
     const name=modalEl.querySelector('#newName').value.trim(), color=modalEl.querySelector('#newColor').value;
     const err=modalEl.querySelector('#tmErr');
     if(!name){ err.textContent='Enter a team name.'; err.classList.add('show'); return; }
-    if(state.teams.some(t=>t.name.toLowerCase()===name.toLowerCase())){ err.textContent='That team already exists.'; err.classList.add('show'); return; }
-    try{ await store.addTeam(name,color); await loadAll(); render(); openTeamsModal(); toast('Team added'); }catch(e){ err.textContent='Could not add: '+(e.message||e); err.classList.add('show'); }
+    if(curTeams().some(t=>t.name.toLowerCase()===name.toLowerCase())){ err.textContent='That team already exists.'; err.classList.add('show'); return; }
+    try{ await store.addTeam(state.tournamentId, name,color); await loadAll(); render(); openTeamsModal(); toast('Team added'); }catch(e){ err.textContent='Could not add: '+(e.message||e); err.classList.add('show'); }
   };
   modalEl.querySelectorAll('.teamrow[data-team]').forEach(row=>{
     const nameI=row.querySelector('.tname'), colorI=row.querySelector('.tcolor');
     const saveEdit=async()=>{ const cur=row.dataset.team, nn=nameI.value.trim(); const patch={}; if(nn&&nn!==cur) patch.name=nn; if(colorI.value) patch.color=colorI.value; if(!Object.keys(patch).length) return;
-      if(patch.name && state.teams.some(t=>t.name.toLowerCase()===patch.name.toLowerCase() && t.name!==cur)){ nameI.value=cur; toast('A team with that name exists'); return; }
-      try{ await store.updateTeam(cur,patch); if(patch.name) row.dataset.team=patch.name; await loadAll(); render(); }catch(e){ toast('Could not save team'); } };
+      if(patch.name && curTeams().some(t=>t.name.toLowerCase()===patch.name.toLowerCase() && t.name!==cur)){ nameI.value=cur; toast('A team with that name exists'); return; }
+      try{ await store.updateTeam(state.tournamentId, cur,patch); if(patch.name) row.dataset.team=patch.name; await loadAll(); render(); }catch(e){ toast('Could not save team'); } };
     nameI.addEventListener('change',saveEdit); colorI.addEventListener('change',saveEdit);
-    row.querySelector('.tdel').onclick=async()=>{ const tn=row.dataset.team; const cnt=counts[tn]||0; if(!confirm(`Delete team "${tn}"?${cnt?` Its ${cnt} player${cnt!==1?'s':''} will be unassigned.`:''}`)) return; try{ await store.removeTeam(tn); await loadAll(); render(); openTeamsModal(); toast('Team deleted'); }catch(e){ toast('Could not delete'); } };
+    row.querySelector('.tdel').onclick=async()=>{ const tn=row.dataset.team; const cnt=counts[tn]||0; if(!confirm(`Delete team "${tn}"?${cnt?` Its ${cnt} player${cnt!==1?'s':''} will be unassigned.`:''}`)) return; try{ await store.removeTeam(state.tournamentId, tn); await loadAll(); render(); openTeamsModal(); toast('Team deleted'); }catch(e){ toast('Could not delete'); } };
   });
 }
 
@@ -1156,7 +1236,7 @@ function renderTeams(el){
   const pMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
   const tsFor=n=>tstats.find(x=>x.name===n)||{name:n,played:0,won:0,lost:0,pf:0,pa:0,diff:0,pct:0};
   // sortable standings
-  let rows=state.teams.map(t=>({t,ts:tsFor(t.name),rank:tstats.findIndex(x=>x.name===t.name)}));
+  let rows=curTeams().map(t=>({t,ts:tsFor(t.name),rank:tstats.findIndex(x=>x.name===t.name)}));
   const {col,dir}=teamSort;
   if(col==='rank') rows.sort((a,b)=>(a.rank<0?99:a.rank)-(b.rank<0?99:b.rank));
   else if(col==='team') rows.sort((a,b)=>dir*a.t.name.localeCompare(b.t.name));
@@ -1167,7 +1247,7 @@ function renderTeams(el){
     <div class="sectionhead"><h2>Teams</h2><div class="spacer"></div>
       <button class="btn sm" id="manageTeamsBtn">${I.shield}Manage teams</button>
     </div>
-    ${state.teams.length? `
+    ${curTeams().length? `
     <div class="card pad" style="margin-bottom:18px">
       <div class="card-title">${I.trophy}Standings</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
@@ -1269,7 +1349,7 @@ function playerDatalist(){ return `<datalist id="playerList">${allPlayerNames().
 function openMatchModal(id){
   const existing = id? state.matches.find(m=>m.id===id) : null;
   const nextNo = existing? existing.match_no : (Math.max(0,...tournamentMatches().map(m=>m.match_no||0))+1);
-  const tl = state.teams.map(t=>t.name);
+  const tl = curTeams().map(t=>t.name);
   if(!tl.length){
     openModal(`<div class="modal-head"><h3>Add match</h3><button class="x" data-close>✕</button></div>
       <div class="modal-body"><p class="subtle" style="font-size:14px">Set up teams and players first: on the <b style="color:var(--text)">Players</b> tab, add players and assign each to a team (or use <b style="color:var(--text)">Teams</b>). Then you can create matches between them.</p>
@@ -1324,8 +1404,8 @@ function openMatchModal(id){
     const patch={ stage, best_of:f.best_of, points:f.points,
       team1:tA, team2:tB, team1_p1:a1, team1_p2:a2||null, team2_p1:b1, team2_p2:b2||null };
     try{
-      if(existing) await store.updateMatch(id,patch);
-      else await store.addMatch({ ...patch, match_no:nextNo, tournament_id:state.tournamentId, status:'scheduled' });
+      if(existing) await store.updateMatch(id,{...patch, ...stampBy()});
+      else await store.addMatch({ ...patch, match_no:nextNo, tournament_id:state.tournamentId, status:'scheduled', ...stampBy() });
       closeModal(); await loadAll(); render(); toast(existing?'Match updated':'Match added');
     }catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); }
   };
@@ -1366,11 +1446,15 @@ function openScoreModal(id){
     for(const g of gs){ if(isNaN(g.s1)||isNaN(g.s2)){ err.textContent='Fill both scores in each game you enter.'; err.classList.add('show'); return; } if(g.s1===g.s2){ err.textContent='A game can\'t be tied — each game needs a winner.'; err.classList.add('show'); return; } }
     let a=0,b=0; gs.forEach(g=>{ if(g.s1>g.s2)a++; else b++; });
     if(Math.max(a,b)<need){ err.textContent='Best of '+bo+': a team needs to win '+need+' games. Enter the remaining game(s).'; err.classList.add('show'); return; }
-    try{ await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed'}); closeModal(); await loadAll(); render(); toast('Result saved'); }
-    catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); }
+    const commit=async()=>{ try{ await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Result saved'); }
+      catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); } };
+    if(!getUser()){ openUserModal(commit); return; }   // ask name once, then save with attribution
+    await commit();
   };
   modalEl.querySelector('#clearScore')?.addEventListener('click',async()=>{
-    try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled'}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){}
+    const commit=async()=>{ try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){} };
+    if(!getUser()){ openUserModal(commit); return; }
+    await commit();
   });
 }
 
@@ -1386,6 +1470,9 @@ function openTournamentModal(id){
         <div class="field"><label>Start date <span style="text-transform:none;color:var(--muted)">(optional)</span></label><input id="tDate" type="date" value="${t?(t.start_date||''):''}"></div>
         <div class="field"><label>Status</label><select id="tStatus"><option value="active" ${t&&t.status==='active'?'selected':''}>Active</option><option value="completed" ${t&&t.status==='completed'?'selected':''}>Completed</option></select></div>
       </div>
+      ${!t && state.tournaments.length ? `<div class="field"><label>Start teams &amp; roster from <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
+        <select id="tCopy"><option value="">— Empty (set up fresh) —</option>${state.tournaments.map(x=>`<option value="${x.id}" ${x.id===state.tournamentId?'selected':''}>${esc(x.name)}${x.edition?' · '+esc(x.edition):''}</option>`).join('')}</select>
+        <div class="hint">Copies that tournament's teams, player-to-team assignments and captains so you can tweak them here. Players themselves are shared across every tournament.</div></div>` : ''}
       <div class="field"><label>Banner image <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
         <div class="uploader"><div class="thumb" id="bThumb">${t&&t.banner_url?`<img src="${esc(t.banner_url)}">`:'🏞️'}</div>
           <div class="ubtns"><button type="button" class="btn sm" id="bPick">Choose image</button><button type="button" class="btn sm ghost danger" id="bClear" ${t&&t.banner_url?'':'hidden'}>Remove</button></div>
@@ -1454,7 +1541,9 @@ function openTournamentModal(id){
     try{
       let tid=id;
       if(t){ await store.updateTournament(id,patch); }
-      else { const nt=await store.addTournament(patch); tid=nt.id; }
+      else { const nt=await store.addTournament(patch); tid=nt.id;
+        const copyEl=modalEl.querySelector('#tCopy'); const copyFrom=copyEl?copyEl.value:'';
+        if(copyFrom) await store.copyTeamsAndRosters(copyFrom, tid); }
       const imgPatch={};
       if(typeof pendBanner==='string' && pendBanner.startsWith('data:')) imgPatch.banner_url=await store.saveImage(pendBanner,`tournament/${tid}/banner.jpg`);
       else if(pendBanner==='') imgPatch.banner_url=null;
@@ -1609,6 +1698,7 @@ setThemeIcon();
    ================================================================ */
 document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b)return; state.tab=b.dataset.tab; render(); });
 document.getElementById('tournamentSel').addEventListener('change',e=>{ state.tournamentId=e.target.value; render(); });
+document.getElementById('userPill').addEventListener('click',()=>openUserModal());
 // clicking any team chip opens the Teams page for that team (capture phase so it beats row handlers)
 document.addEventListener('click',e=>{ const c=e.target.closest&&e.target.closest('.tchip[data-teamnav]'); if(c){ e.preventDefault(); e.stopPropagation(); gotoTeam(c.getAttribute('data-teamnav')); } }, true);
 // clicking any player name opens that player's card
@@ -1617,6 +1707,7 @@ document.addEventListener('click',e=>{ const p=e.target.closest&&e.target.closes
 (async function start(){
   const pill=document.getElementById('connPill'), ct=document.getElementById('connText');
   if(useDB){ pill.className='conn live'; ct.textContent='Live sync'; } else { pill.className='conn local'; ct.textContent='On this device'; }
+  renderUserPill();
   try{
     await store.init();
     await loadAll();
