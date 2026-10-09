@@ -1122,19 +1122,12 @@ function renderAdmin(el){
 async function renderAccessMgr(box){
   if(!box) return;
   let users=[]; try{ const {data}=await sb.rpc('app_list_users',{su:session.username,sp:session.pw}); if(data&&data.ok) users=data.users||[]; }catch(e){}
+  users=users.filter(u=>u.is_super||u.is_admin);
   const players=Object.keys(state.players).sort((a,b)=>a.localeCompare(b));
-  const tours=(state.tournaments||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  const tName=tid=>{ const t=tours.find(x=>x.id===tid); return t?t.name:'(tournament)'; };
   const ps='padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)';
-  const chip=label=>`<span class="tmstage">${esc(label)}</span>`;
-  const grp=(lbl,chips)=> chips.length?`<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="subtle" style="font-size:11px">${lbl}</span> ${chips.join(' ')}</div>`:'';
   const rowHtml=u=>{
-    const adm=(u.admin_of||[]).map(tid=>chip(tName(tid)));
-    const cap=(u.captain_of||[]).map(tid=>chip(tName(tid)+' ⚑'));
-    const ump=(u.umpire_of||[]).map(tid=>chip(tName(tid)));
     return `<div class="set-row" style="padding:8px 0;border-bottom:1px solid var(--border);align-items:flex-start">
       <div class="sr-main" style="display:flex;align-items:flex-start;gap:10px">${avatar(u.username,30)}<div style="min-width:0"><div class="t">${esc(u.username)}${u.is_super?' <span class="captag">super</span>':''}${(u.is_admin&&!u.is_super)?' <span class="captag">admin · all</span>':''}</div>
-        ${grp('admin:',adm)}${grp('captain⇒admin:',cap)}${grp('umpire:',ump)}
       </div></div>
       ${u.username.toLowerCase()===session.username.toLowerCase()?'<span class="subtle">you</span>':`<button class="btn sm ghost danger uRm" data-u="${esc(u.username)}" style="flex:none">Remove</button>`}
     </div>`;
