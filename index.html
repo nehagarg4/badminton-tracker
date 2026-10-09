@@ -225,6 +225,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .teamfield.a .th{color:var(--teamA)} .teamfield.b .th{color:var(--teamB)}
 .teamfield input{margin-bottom:8px;background:var(--surface)}
 .teamfield input:last-child{margin-bottom:0}
+.teamfield select{width:100%;margin-bottom:8px;padding:10px 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface);font-size:14px;font-weight:600}
+.teamfield select:last-child{margin-bottom:0}
+.teamfield select:focus{outline:none;border-color:var(--accent)}
+.teamfield select.teamsel{font-weight:800;margin-bottom:10px}
+.teamfield.a select.teamsel{color:var(--teamA)} .teamfield.b select.teamsel{color:var(--teamB)}
 .scorebig{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin:4px 0 6px}
 .scorebig .sc{text-align:center}
 .scorebig .sc .lbl{font-size:11px;font-weight:800;text-transform:uppercase;margin-bottom:8px}
@@ -423,6 +428,7 @@ function seedData(){
   ];
   const matches = M.map(m=>({ id:uid(), tournament_id:tid, match_no:m[0], group_label:m[1], stage:'League',
     best_of:3, points:21, games:[],
+    team1:PLAYER_TEAM[m[2]]||null, team2:PLAYER_TEAM[m[4]]||null,
     team1_p1:m[2], team1_p2:m[3], team2_p1:m[4], team2_p2:m[5],
     score1:null, score2:null, status:'scheduled', created_at:nowISO() }));
   const teams = TEAM_SEED.map(x=>({ name:x.name, color:x.color, created_at:nowISO() }));
@@ -475,6 +481,7 @@ const store = {
   async addMatch(m){
     const rec={ tournament_id:m.tournament_id, match_no:m.match_no, group_label:m.group_label||null, stage:m.stage||'League',
       best_of:m.best_of||3, points:m.points||21, games:m.games||[],
+      team1:m.team1||null, team2:m.team2||null,
       team1_p1:m.team1_p1, team1_p2:m.team1_p2, team2_p1:m.team2_p1, team2_p2:m.team2_p2,
       score1:m.score1??null, score2:m.score2??null, status:m.status||'scheduled', created_at:nowISO() };
     if(useDB){ const {data,error}=await sb.from('matches').insert(rec).select().single(); if(error)throw error; return data; }
@@ -581,6 +588,8 @@ function winnerOf(m){
 const teamOf = name => (state.players[name] && state.players[name].team) || null;
 const teamColor = t => { const x=state.teams.find(x=>x.name===t); return x?x.color:'#8a94a2'; };
 function sideTeam(m, side){
+  const stored = side===1 ? m.team1 : m.team2;
+  if(stored) return stored;
   const names = side===1 ? [m.team1_p1,m.team1_p2] : [m.team2_p1,m.team2_p2];
   const ts=[...new Set(names.filter(Boolean).map(teamOf).filter(Boolean))];
   return ts.length===1 ? ts[0] : null;
@@ -1039,11 +1048,20 @@ function playerDatalist(){ return `<datalist id="playerList">${allPlayerNames().
 function openMatchModal(id){
   const existing = id? state.matches.find(m=>m.id===id) : null;
   const nextNo = existing? existing.match_no : (Math.max(0,...tournamentMatches().map(m=>m.match_no||0))+1);
+  const tl = state.teams.map(t=>t.name);
+  if(!tl.length){
+    openModal(`<div class="modal-head"><h3>Add match</h3><button class="x" data-close>✕</button></div>
+      <div class="modal-body"><p class="subtle" style="font-size:14px">Set up teams and players first: on the <b style="color:var(--text)">Players</b> tab, add players and assign each to a team (or use <b style="color:var(--text)">Teams</b>). Then you can create matches between them.</p>
+      <div class="modal-foot"><button class="btn primary" data-close>OK</button></div></div>`);
+    return;
+  }
+  const t1=existing?(existing.team1||sideTeam(existing,1)||tl[0]):tl[0];
+  const t2=existing?(existing.team2||sideTeam(existing,2)||(tl[1]||tl[0])):(tl[1]||tl[0]);
+  const teamSel=(idv,sel)=>`<select id="${idv}" class="teamsel">${tl.map(t=>`<option ${t===sel?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
   openModal(`
     <div class="modal-head"><h3>${existing?'Edit match':'Add match'}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="mErr"></div>
-      ${playerDatalist()}
       <div class="row2">
         <div class="field"><label>Match #</label><input id="fNo" type="number" min="1" value="${existing?existing.match_no??'':nextNo}"></div>
         <div class="field"><label>Stage</label><select id="fStage">${STAGES.map(s=>`<option ${((existing&&existing.stage===s)||(!existing&&s==='League'))?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -1053,32 +1071,38 @@ function openMatchModal(id){
         <div class="field"><label>Points / game</label><select id="fPoints"><option value="21" ${(!existing||(existing.points||21)===21)?'selected':''}>21 points</option><option value="15" ${(existing&&existing.points===15)?'selected':''}>15 points</option></select></div>
       </div>
       <div class="vsrow">
-        <div class="teamfield a"><div class="th">Team A</div>
-          <input id="a1" list="playerList" placeholder="Player 1" value="${existing?esc(existing.team1_p1||''):''}">
-          <input id="a2" list="playerList" placeholder="Player 2" value="${existing?esc(existing.team1_p2||''):''}">
-        </div>
+        <div class="teamfield a">${teamSel('tA',t1)}<select id="a1" class="psel"></select><select id="a2" class="psel"></select></div>
         <div class="vsbadge">vs</div>
-        <div class="teamfield b"><div class="th">Team B</div>
-          <input id="b1" list="playerList" placeholder="Player 1" value="${existing?esc(existing.team2_p1||''):''}">
-          <input id="b2" list="playerList" placeholder="Player 2" value="${existing?esc(existing.team2_p2||''):''}">
-        </div>
+        <div class="teamfield b">${teamSel('tB',t2)}<select id="b1" class="psel"></select><select id="b2" class="psel"></select></div>
       </div>
+      <div class="hint">Players come from each team's roster. To add someone, create them on the Players tab first.</div>
       <div class="modal-foot">
         <button class="btn" data-close>Cancel</button>
         <button class="btn primary" id="saveMatch">${existing?'Save':'Add match'}</button>
       </div>
     </div>`);
+  const fill=(selId, tmSelId, selectedName, optional)=>{
+    const tm=modalEl.querySelector(tmSelId).value; const sel=modalEl.querySelector(selId);
+    const players=Object.keys(state.players).filter(n=>teamOf(n)===tm).sort((a,b)=>a.localeCompare(b));
+    if(selectedName && !players.includes(selectedName)) players.unshift(selectedName);
+    const head = optional ? '<option value="">— (optional) —</option>' : (players.length?'':'<option value="">— no players in team —</option>');
+    sel.innerHTML = head + players.map(n=>`<option ${n===selectedName?'selected':''}>${esc(n)}</option>`).join('');
+  };
+  fill('#a1','#tA',existing?existing.team1_p1:'',false); fill('#a2','#tA',existing?existing.team1_p2:'',true);
+  fill('#b1','#tB',existing?existing.team2_p1:'',false); fill('#b2','#tB',existing?existing.team2_p2:'',true);
+  modalEl.querySelector('#tA').onchange=()=>{ fill('#a1','#tA','',false); fill('#a2','#tA','',true); };
+  modalEl.querySelector('#tB').onchange=()=>{ fill('#b1','#tB','',false); fill('#b2','#tB','',true); };
   modalEl.querySelector('#saveMatch').onclick=async()=>{
-    const v=k=>modalEl.querySelector(k).value.trim();
-    const a1=v('#a1'),a2=v('#a2'),b1=v('#b1'),b2=v('#b2');
+    const val=k=>modalEl.querySelector(k).value;
+    const tA=val('#tA'), tB=val('#tB'), a1=val('#a1'), a2=val('#a2'), b1=val('#b1'), b2=val('#b2');
     const no=parseInt(modalEl.querySelector('#fNo').value,10);
     const err=modalEl.querySelector('#mErr');
-    if(!a1||!b1){ err.textContent='Each team needs at least one player (Player 1).'; err.classList.add('show'); return; }
-    const patch={ match_no:isNaN(no)?null:no, stage:modalEl.querySelector('#fStage').value,
-      best_of:parseInt(modalEl.querySelector('#fBestOf').value,10), points:parseInt(modalEl.querySelector('#fPoints').value,10),
-      team1_p1:a1, team1_p2:a2||null, team2_p1:b1, team2_p2:b2||null };
+    if(!a1||!b1){ err.textContent='Pick Player 1 for each team. If a list is empty, add players to that team on the Players tab first.'; err.classList.add('show'); return; }
+    const chosen=[a1,a2,b1,b2].filter(Boolean);
+    if(new Set(chosen).size!==chosen.length){ err.textContent='A player can\'t appear twice in the same match.'; err.classList.add('show'); return; }
+    const patch={ match_no:isNaN(no)?null:no, stage:val('#fStage'), best_of:parseInt(val('#fBestOf'),10), points:parseInt(val('#fPoints'),10),
+      team1:tA, team2:tB, team1_p1:a1, team1_p2:a2||null, team2_p1:b1, team2_p2:b2||null };
     try{
-      await store.addPlayers([a1,a2,b1,b2].filter(Boolean));
       if(existing) await store.updateMatch(id,patch);
       else await store.addMatch({ ...patch, tournament_id:state.tournamentId, status:'scheduled' });
       closeModal(); await loadAll(); render(); toast(existing?'Match updated':'Match added');
@@ -1265,13 +1289,19 @@ function oppOf(m,name){
 
 function removePlayerFlow(name){
   const mc=matchCountFor(name);
+  if(mc>0){
+    openModal(`
+      <div class="modal-head"><h3>Can't remove ${esc(name)}</h3><button class="x" data-close>✕</button></div>
+      <div class="modal-body">
+        <p class="subtle" style="font-size:14px;margin-bottom:12px">${esc(name)} is in <b style="color:var(--text)">${mc} match${mc!==1?'es':''}</b>. To keep the data consistent, delete or re-assign those matches on the <b style="color:var(--text)">Matches</b> tab first — then you can remove this player.</p>
+        <div class="modal-foot"><button class="btn primary" data-close>OK</button></div>
+      </div>`);
+    return;
+  }
   openModal(`
     <div class="modal-head"><h3>Remove ${esc(name)}?</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
-      <p class="subtle" style="font-size:14px;margin-bottom:12px">
-        ${mc? `${esc(name)} is in <b style="color:var(--text)">${mc} match${mc!==1?'es':''}</b>. Removing clears their profile photo and roster entry, but they'll keep appearing while they're in those matches — edit or delete those matches on the <b style="color:var(--text)">Matches</b> tab to remove them fully.`
-            : `Remove <b style="color:var(--text)">${esc(name)}</b> from the roster? This also clears their profile photo.`}
-      </p>
+      <p class="subtle" style="font-size:14px;margin-bottom:12px">Remove <b style="color:var(--text)">${esc(name)}</b> from the roster? This also clears their profile photo. They're not in any match.</p>
       <div class="modal-foot">
         <button class="btn" data-close>Cancel</button>
         <button class="btn primary" style="background:var(--danger)" id="rpYes">${I.trash}Remove</button>
@@ -1279,7 +1309,7 @@ function removePlayerFlow(name){
     </div>`);
   modalEl.querySelector('#rpYes').onclick=async()=>{
     try{ await store.removePlayer(name); closeModal(); await loadAll(); render(); toast('Player removed'); }
-    catch(e){ toast('Could not remove'); }
+    catch(e){ toast(e.message&&e.message.includes('foreign')?'Player is referenced by a match — remove it first.':'Could not remove'); }
   };
 }
 
