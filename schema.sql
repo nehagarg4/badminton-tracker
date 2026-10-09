@@ -111,7 +111,7 @@ create policy "images delete" on storage.objects for delete using (bucket_id = '
 -- ============================================================
 insert into players (name) values
   ('Rajeev'),('Prakash'),('Gaurang'),('Sameer'),('Amogh'),('Deepankar'),
-  ('Prateek'),('Ranjith'),('Sasi'),('Prithvi'),('Ankur'),('Rama'),('Ram'),
+  ('Prateek'),('Ranjith'),('Sasi'),('Prithvi'),('Ankur'),('Rama'),
   ('Deepak'),('Gunvansh'),('Venky'),('Prasad'),('Ayas'),('Mahesh'),
   ('Jagdeep'),('Ankit'),('Harsha'),('Rohith'),('Bhanu'),('Ramana')
 on conflict (name) do nothing;
@@ -133,7 +133,7 @@ begin
     insert into rosters (tournament_id, player, team) values
       (tid,'Rajeev','Hera Pheri Smashers'),(tid,'Prakash','Hera Pheri Smashers'),(tid,'Gaurang','Hera Pheri Smashers'),
       (tid,'Sameer','Hera Pheri Smashers'),(tid,'Amogh','Hera Pheri Smashers'),(tid,'Deepankar','Hera Pheri Smashers'),
-      (tid,'Prateek','Team D'),(tid,'Ranjith','Team D'),(tid,'Sasi','Team D'),(tid,'Prithvi','Team D'),(tid,'Ankur','Team D'),(tid,'Rama','Team D'),(tid,'Ram','Team D'),
+      (tid,'Prateek','Team D'),(tid,'Ranjith','Team D'),(tid,'Sasi','Team D'),(tid,'Prithvi','Team D'),(tid,'Ankur','Team D'),(tid,'Rama','Team D'),
       (tid,'Deepak','DRS-Drops Rallies Smashes'),(tid,'Gunvansh','DRS-Drops Rallies Smashes'),(tid,'Venky','DRS-Drops Rallies Smashes'),
       (tid,'Prasad','DRS-Drops Rallies Smashes'),(tid,'Ayas','DRS-Drops Rallies Smashes'),(tid,'Mahesh','DRS-Drops Rallies Smashes'),
       (tid,'Jagdeep','Team C'),(tid,'Ankit','Team C'),(tid,'Harsha','Team C'),(tid,'Rohith','Team C'),(tid,'Bhanu','Team C'),(tid,'Ramana','Team C');
@@ -142,17 +142,17 @@ begin
       (tid, 1,  'League', 'Hera Pheri Smashers','Team D', 'Rajeev',   'Prakash',  'Prateek', 'Ranjith'),
       (tid, 2,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Deepak',   'Gunvansh', 'Jagdeep', 'Ankit'),
       (tid, 3,  'League', 'Hera Pheri Smashers','Team D', 'Gaurang',  'Sameer',   'Sasi',    'Prithvi'),
-      (tid, 4,  'League', 'Hera Pheri Smashers','Team D', 'Prakash',  'Amogh',    'Prateek', 'Ankur'),
-      (tid, 5,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Gunvansh', 'Venky',    'Harsha',  'Rohith'),
-      (tid, 6,  'League', 'Hera Pheri Smashers','Team D', 'Rajeev',   'Deepankar','Sasi',    'Ranjith'),
+      (tid, 4,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Mahesh',   'Ayas',     'Bhanu',   'Harsha'),
+      (tid, 5,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Prasad',   'Venky',    'Ankit',   'Rohith'),
+      (tid, 6,  'League', 'Hera Pheri Smashers','Team D', 'Deepankar','Amogh',    'Ranjith', 'Ankur'),
       (tid, 7,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Mahesh',   'Prasad',   'Jagdeep', 'Ramana'),
-      (tid, 8,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Prasad',   'Venky',    'Ankit',   'Rohith'),
-      (tid, 9,  'League', 'Hera Pheri Smashers','Team D', 'Deepankar','Amogh',    'Ranjith', 'Ankur'),
+      (tid, 8,  'League', 'DRS-Drops Rallies Smashes','Team C', 'Gunvansh', 'Venky',    'Harsha',  'Rohith'),
+      (tid, 9,  'League', 'Hera Pheri Smashers','Team D', 'Rajeev',   'Deepankar','Sasi',    'Ranjith'),
       (tid, 10, 'League', 'DRS-Drops Rallies Smashes','Team C', 'Ayas',     'Gunvansh', 'Jagdeep', 'Bhanu'),
-      (tid, 11, 'League', 'DRS-Drops Rallies Smashes','Team C', 'Ayas',     'Deepak',   'Bhanu',   'Ramana'),
-      (tid, 12, 'League', 'DRS-Drops Rallies Smashes','Team C', 'Mahesh',   'Ayas',     'Bhanu',   'Harsha'),
+      (tid, 11, 'League', 'Hera Pheri Smashers','Team D', 'Prakash',  'Amogh',    'Prateek', 'Ankur'),
+      (tid, 12, 'League', 'DRS-Drops Rallies Smashes','Team C', 'Ayas',     'Deepak',   'Bhanu',   'Harsha'),
       (tid, 13, 'League', 'Hera Pheri Smashers','Team D', 'Deepankar','Sameer',   'Prateek', 'Rama'),
-      (tid, 14, 'League', 'Hera Pheri Smashers','Team D', 'Rajeev',   'Gaurang',  'Ram',     'Prithvi');
+      (tid, 14, 'League', 'Hera Pheri Smashers','Team D', 'Rajeev',   'Gaurang',  'Rama',    'Prithvi');
   end if;
 end $$;
 
