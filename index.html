@@ -1027,31 +1027,24 @@ function render(){
 }
 
 /* ---- Admin (/admin or #admin) ---- */
-let adminSignupMode=false;
 function renderAdmin(el){
   const back=`<button class="btn sm" id="adBack">${isAuthed()?'Back to app':'Back'}</button>`;
   if(!useDB){ el.innerHTML=`<div class="wrap"><div class="set-wrap"><div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div><div class="set-card"><p class="subtle">Admin sign-in needs the live site (Supabase). You're in on-device mode.</p></div></div></div>`; el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); }; return; }
 
   if(!isAuthed()){
-    const su=adminSignupMode;
     el.innerHTML=`<div class="wrap"><div class="set-wrap" style="max-width:440px">
       <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
-      <div class="set-card"><h2>${su?'Create account':'Sign in'}</h2>
+      <div class="set-card"><h2>Sign in</h2>
         <div class="err" id="adErr"></div>
         <div class="field"><label>Email</label><input id="adEmail" type="email" autocomplete="username" placeholder="you@example.com"></div>
-        <div class="field"><label>Password</label><input id="adPass" type="password" autocomplete="${su?'new-password':'current-password'}" placeholder="••••••••"></div>
-        <div class="modal-foot"><button class="btn primary" id="adGo" style="flex:1;justify-content:center">${su?'Create account':'Sign in'}</button></div>
-        <div class="hint" style="margin-top:12px"><a href="#" id="adToggle">${su?'Have an account? Sign in':'Create an account'}</a> · Only admins can edit; everyone else sees read-only.</div>
+        <div class="field"><label>Password</label><input id="adPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <div class="modal-foot"><button class="btn primary" id="adGo" style="flex:1;justify-content:center">Sign in</button></div>
+        <div class="hint" style="margin-top:12px">Admin accounts are created in Supabase (Authentication → Add user). Only admins can edit; everyone else sees read-only.</div>
       </div></div></div>`;
     el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
-    el.querySelector('#adToggle').onclick=(e)=>{ e.preventDefault(); adminSignupMode=!adminSignupMode; renderAdmin(el); };
     const go=async()=>{ const email=(el.querySelector('#adEmail').value||'').trim(), password=el.querySelector('#adPass').value||''; const err=el.querySelector('#adErr');
       if(!email||!password){ err.textContent='Enter email and password.'; err.classList.add('show'); return; }
-      const btn=el.querySelector('#adGo'); btn.disabled=true; btn.textContent='…';
-      if(su){ const {data,error}=await sb.auth.signUp({email,password});
-        if(error){ err.textContent=error.message||'Could not create account.'; err.classList.add('show'); btn.disabled=false; btn.textContent='Create account'; return; }
-        if(!data.session){ err.classList.remove('show'); el.querySelector('.set-card').innerHTML='<h2>Check your email</h2><p class="subtle">Confirm your email, then come back and sign in.</p>'; return; }
-        store._audit('admin.signup',{email}); return; }
+      const btn=el.querySelector('#adGo'); btn.disabled=true; btn.textContent='Signing in…';
       const {error}=await sb.auth.signInWithPassword({email,password});
       if(error){ err.textContent=error.message||'Could not sign in.'; err.classList.add('show'); btn.disabled=false; btn.textContent='Sign in'; store._audit('admin.login_failed',{email}); return; }
       store._audit('admin.login',{email}); };
@@ -1086,7 +1079,7 @@ function renderAdmin(el){
         <label class="subtle" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="adNewSuper"> super</label>
         <button class="btn sm primary" id="adAdd" style="flex:none">Add</button>
       </div>
-      <div class="hint" style="margin-top:8px">Adding an email grants edit rights to that account. They still need a login — they can <b>Create account</b> on this screen, or you add them in Supabase → Authentication.</div>
+      <div class="hint" style="margin-top:8px">Adding an email grants edit rights. Create their login in Supabase → Authentication → Add user (tick "Auto Confirm" so no email is sent).</div>
     </div>`:''}
     <div class="set-card danger"><h2>Danger zone</h2>
       <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept. Cannot be undone.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
