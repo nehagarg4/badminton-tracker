@@ -71,6 +71,7 @@ a{color:var(--accent-ink)}
 .tsel select:focus{outline:none}
 .iconbtn{width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;color:var(--text2)}
 .iconbtn:hover{background:var(--surface2);color:var(--text)}
+.iconbtn[disabled]{opacity:.3;pointer-events:none}
 .iconbtn svg{width:18px;height:18px}
 .conn{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;border:1px solid var(--border)}
 .conn .dot{width:7px;height:7px;border-radius:50%}
@@ -899,6 +900,7 @@ const I = {
   cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
   chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
+  arrowUp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>',
 };
 
 /* ================================================================
@@ -1015,7 +1017,7 @@ function renderMatches(el){
       const stKey='st:'+stage; const stOpen=q?true:!matchCollapsed.has(stKey);
       return `<div class="stageblock">
         <button class="stagehead ${stOpen?'':'collapsed'}" data-mc="${esc(stKey)}"><span class="chev">${I.chevron}</span><span class="stagebadge">${esc(stage)}</span><div class="line"></div><span class="count num">${sm.filter(m=>m.status==='completed').length}/${sm.length}</span></button>
-        <div class="stagefixtures" ${stOpen?'':'hidden'}>${sm.map(matchRow).join('')}</div>
+        <div class="stagefixtures" ${stOpen?'':'hidden'}>${sm.map((m,i)=>matchRow(m,{first:i===0,last:i===sm.length-1})).join('')}</div>
       </div>`;
     }).join('')
     : `<div class="empty"><h3>No matches found</h3><p>No matches with “${esc(matchSearch)}”. Try another player or team.</p></div>`)
@@ -1036,12 +1038,29 @@ function renderMatches(el){
   el.querySelectorAll('.matchrow[data-id]').forEach(row=>row.onclick=(e)=>{ if(e.target.closest('.mactions')) return; openScoreModal(row.dataset.id); });
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); openMatchModal(b.dataset.edit); });
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); confirmDelete('match',b.dataset.del); });
+  el.querySelectorAll('[data-moveup]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); moveMatch(b.dataset.moveup,-1); });
+  el.querySelectorAll('[data-movedown]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); moveMatch(b.dataset.movedown,1); });
 }
-function matchRow(m){
+// swap a match's sequence (match_no) with its neighbour in the same stage's display order
+async function moveMatch(id, dir){
+  const m=state.matches.find(x=>x.id===id); if(!m) return;
+  const st=m.stage||'League';
+  const sm=state.matches.filter(x=>x.tournament_id===m.tournament_id && (x.stage||'League')===st)
+    .slice().sort((a,b)=>((a.status==='completed')?1:0)-((b.status==='completed')?1:0)||(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
+  const i=sm.findIndex(x=>x.id===id); const j=i+dir;
+  if(i<0||j<0||j>=sm.length) return;
+  const other=sm[j];
+  try{ await store.updateMatch(m.id,{match_no:other.match_no}); await store.updateMatch(other.id,{match_no:m.match_no}); await loadAll(); render();
+    setTimeout(()=>{ const n=document.getElementById('m-'+id); if(n){ n.scrollIntoView({behavior:'smooth',block:'center'}); n.classList.add('flash'); setTimeout(()=>n.classList.remove('flash'),1000); } },60);
+  }catch(e){ toast('Could not reorder'); }
+}
+function matchRow(m, opts){
+  opts=opts||{};
   const w=winnerOf(m); const done=m.status==='completed';
   const gw=gamesWon(m), gs=gamesOf(m);
   const ta=sideTeam(m,1), tb=sideTeam(m,2);
   const fmt=`Best of ${bestOf(m)} · ${m.points||21} pts`;
+  const canMove = !matchSearch.trim();   // reordering only when not filtering
   return `<div class="matchrow" data-id="${m.id}" id="m-${m.id}" title="Tap to ${done?'edit the':'record the'} score">
     <div class="mno"><b class="num">${pairNoFor(m)}</b><span>Match</span></div>
     <div class="teams">
@@ -1061,6 +1080,7 @@ function matchRow(m){
       </div>
     </div>
     <div class="mactions">
+      ${canMove?`<button class="iconbtn" data-moveup="${m.id}" title="Move up" ${opts.first?'disabled':''}>${I.arrowUp}</button><button class="iconbtn" data-movedown="${m.id}" title="Move down" ${opts.last?'disabled':''}>${I.chevron}</button>`:''}
       <button class="iconbtn" data-edit="${m.id}" title="Edit match (teams, stage)">${I.edit}</button>
       <button class="iconbtn" data-del="${m.id}" title="Delete match">${I.trash}</button>
     </div>
