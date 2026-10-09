@@ -494,19 +494,34 @@ function relTime(iso){ if(!iso) return ''; const s=Math.max(0,(Date.now()-new Da
   const h=m/60; if(h<24) return Math.round(h)+'h ago';
   const d=h/24; if(d<7) return Math.round(d)+'d ago';
   try{ return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; } }
-function renderUserPill(){ const el=document.getElementById('userText'); if(!el) return; const u=getUser(); el.textContent=u||'Set name'; document.getElementById('userPill')?.classList.toggle('named',!!u); }
+function renderUserPill(){ const el=document.getElementById('userText'); if(!el) return; const u=getUser(); el.textContent=u?('Logged in as '+u):'Log in'; const p=document.getElementById('userPill'); if(p){ p.classList.toggle('named',!!u); p.title=u?('Logged in as '+u+' — tap to change'):'Log in — pick who is using this device'; } }
 function openUserModal(afterSet){
   const cur=getUser();
-  openModal(`<div class="modal-head"><h3>Your name</h3><button class="x" data-close>✕</button></div>
+  const names=Object.keys(state.players||{}).sort((a,b)=>a.localeCompare(b));
+  const isPlayer = cur && names.includes(cur);
+  const otherSel = !!cur && !isPlayer;
+  openModal(`<div class="modal-head"><h3>Log in</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
-      <p class="subtle" style="font-size:13.5px;margin-bottom:12px">Shown as who recorded or edited a score. Saved on this device only — no password.</p>
-      <div class="field"><label>Name</label><input id="uName" placeholder="e.g. Ankit" value="${esc(cur)}" maxlength="40"></div>
+      <p class="subtle" style="font-size:13.5px;margin-bottom:12px">Pick who's using this device — usually one of the players. Saved on this device only, no password. Labels who records or edits scores.</p>
+      <div class="field"><label>I am</label>
+        <select id="uPlayer">
+          <option value="">— Choose your name —</option>
+          ${names.map(n=>`<option value="${esc(n)}" ${n===cur?'selected':''}>${esc(n)}</option>`).join('')}
+          <option value="__other__" ${otherSel?'selected':''}>Someone else…</option>
+        </select>
+      </div>
+      <div class="field" id="uOtherField" ${otherSel?'':'hidden'}><label>Name</label><input id="uName" placeholder="e.g. Scorer / Organiser" value="${otherSel?esc(cur):''}" maxlength="40"></div>
       <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="uSave">Save</button></div>
     </div>`);
-  const inp=modalEl.querySelector('#uName'); setTimeout(()=>inp.focus(),60);
-  const save=()=>{ const n=inp.value.trim(); if(!n){ inp.focus(); return; } setUser(n); closeModal(); renderUserPill(); if(typeof afterSet==='function') afterSet(); };
+  const sel=modalEl.querySelector('#uPlayer'), otherField=modalEl.querySelector('#uOtherField');
+  const syncOther=()=>{ const o=sel.value==='__other__'; otherField.hidden=!o; if(o) setTimeout(()=>modalEl.querySelector('#uName').focus(),40); };
+  sel.addEventListener('change',syncOther);
+  setTimeout(()=>sel.focus(),60);
+  const save=()=>{ const n = sel.value==='__other__' ? (modalEl.querySelector('#uName').value||'').trim() : sel.value;
+    if(!n){ sel.value==='__other__' ? modalEl.querySelector('#uName').focus() : sel.focus(); return; }
+    setUser(n); closeModal(); renderUserPill(); if(typeof afterSet==='function') afterSet(); };
   modalEl.querySelector('#uSave').onclick=save;
-  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
+  modalEl.querySelector('#uName')?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
 }
 
 /* ---------- images: pick, resize/compress, avatar rendering ---------- */
@@ -1033,7 +1048,7 @@ function matchRow(m){
       <button class="iconbtn" data-edit="${m.id}" title="Edit match (teams, stage)">${I.edit}</button>
       <button class="iconbtn" data-del="${m.id}" title="Delete match">${I.trash}</button>
     </div>
-    <div class="gamedetail">${(done&&gs.length)?gs.map(g=>`<span class="g">${g.s1}–${g.s2}</span>`).join(''):''}${m.updated_by?`<span class="byline" title="Last edited by ${esc(m.updated_by)}">${I.edit}${esc(m.updated_by)} · ${relTime(m.updated_at)}</span>`:''}<span class="fmt">${fmt}</span></div>
+    <div class="gamedetail">${(done&&gs.length)?gs.map(g=>`<span class="g">${g.s1}–${g.s2}</span>`).join(''):''}${m.updated_by?`<span class="byline" title="Last edited by ${esc(m.updated_by)}">${I.edit}${state.players[m.updated_by]?`<span class="pclick" data-player="${esc(m.updated_by)}">${esc(m.updated_by)}</span>`:esc(m.updated_by)} · ${relTime(m.updated_at)}</span>`:''}<span class="fmt">${fmt}</span></div>
   </div>`;
 }
 
