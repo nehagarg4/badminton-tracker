@@ -35,6 +35,7 @@ create table if not exists teams (
   name          text not null,
   color         text,
   captain       text,          -- player name of the team captain (optional)
+  logo          text,          -- public URL of the team icon (optional)
   created_at    timestamptz not null default now(),
   primary key (tournament_id, name)
 );

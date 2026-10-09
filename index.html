@@ -347,6 +347,13 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tchip{display:inline-flex;align-items:center;gap:6px;font-family:var(--head);font-size:12px;font-weight:700;letter-spacing:.5px;padding:4px 11px;border-radius:7px;background:var(--tcbg);color:var(--tc);white-space:nowrap;max-width:100%;cursor:pointer;text-transform:uppercase}
 .tchip[data-teamnav]:hover{filter:brightness(1.15)}
 .tchip i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.tchip .tci{width:16px;height:16px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#000;display:inline-flex}
+.tchip .tci img{width:100%;height:100%;object-fit:cover}
+.tbadge{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;overflow:hidden;flex-shrink:0;vertical-align:middle;
+  border:2px solid var(--muted);background:#000;font-family:var(--disp);line-height:1}
+.tbadge img{width:100%;height:100%;object-fit:cover}
+.teamrow .tlogo{width:38px;height:38px;border-radius:9px;border:1px solid var(--border2);background:var(--surface2);overflow:hidden;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:17px;cursor:pointer;padding:0}
+.teamrow .tlogo img{width:100%;height:100%;object-fit:cover}
 .pclick{cursor:pointer}
 .pclick:hover{text-decoration:underline;text-underline-offset:2px}
 .psep{color:var(--muted);font-weight:600}
@@ -731,13 +738,13 @@ const store = {
   // copy a tournament's teams + rosters (incl. captains) into another tournament
   async copyTeamsAndRosters(fromTid,toTid){
     if(useDB){
-      const {data:ts}=await sb.from('teams').select('name,color,captain').eq('tournament_id',fromTid);
-      if(ts&&ts.length){ const {error}=await sb.from('teams').upsert(ts.map(t=>({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null})),{onConflict:'tournament_id,name'}); if(error)throw error; }
+      const {data:ts}=await sb.from('teams').select('name,color,captain,logo').eq('tournament_id',fromTid);
+      if(ts&&ts.length){ const {error}=await sb.from('teams').upsert(ts.map(t=>({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null,logo:t.logo||null})),{onConflict:'tournament_id,name'}); if(error)throw error; }
       const {data:rs}=await sb.from('rosters').select('player,team').eq('tournament_id',fromTid);
       if(rs&&rs.length){ const {error}=await sb.from('rosters').upsert(rs.map(r=>({tournament_id:toTid,player:r.player,team:r.team||null})),{onConflict:'tournament_id,player'}); if(error)throw error; }
       return;
     }
-    const tm=this._lsTM(); tm.filter(t=>t.tournament_id===fromTid).forEach(t=>{ if(!tm.find(x=>x.tournament_id===toTid&&x.name===t.name)) tm.push({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null,created_at:nowISO()}); }); this._saveTM(tm);
+    const tm=this._lsTM(); tm.filter(t=>t.tournament_id===fromTid).forEach(t=>{ if(!tm.find(x=>x.tournament_id===toTid&&x.name===t.name)) tm.push({tournament_id:toTid,name:t.name,color:t.color,captain:t.captain||null,logo:t.logo||null,created_at:nowISO()}); }); this._saveTM(tm);
     const ro=this._lsR(); ro.filter(r=>r.tournament_id===fromTid).forEach(r=>{ if(!ro.find(x=>x.tournament_id===toTid&&x.player===r.player)) ro.push({tournament_id:toTid,player:r.player,team:r.team||null}); }); this._saveR(ro);
   },
   // Returns the URL to persist. Supabase: uploads to Storage and returns a public URL. On-device: returns the data URL itself.
@@ -818,7 +825,15 @@ function pairNoFor(m){
   const i=peers.findIndex(x=>x.id===m.id);
   return i>=0 ? i+1 : (m.match_no||'');
 }
-function teamChip(name){ if(!name) return ''; const c=teamColor(name); return `<span class="tchip" data-teamnav="${esc(name)}" title="Open ${esc(name)}" style="--tc:${c};--tcbg:${c}22"><i style="background:${c}"></i>${esc(name)}</span>`; }
+function teamLogoUrl(name){ const t=curTeams().find(x=>x.name===name); return (t&&t.logo)||null; }
+// a team's icon: uploaded logo, else a color tile with the team initial
+function teamBadge(name,size){ const c=teamColor(name); const url=teamLogoUrl(name); const s=size||40;
+  if(url) return `<span class="tbadge" style="width:${s}px;height:${s}px;border-color:${c}"><img src="${esc(url)}" alt="" loading="lazy"></span>`;
+  const init=((name||'?').trim().charAt(0)||'?');
+  return `<span class="tbadge ini" style="width:${s}px;height:${s}px;border-color:${c};background:${c}22;color:${c};font-size:${Math.round(s*0.42)}px">${esc(init)}</span>`; }
+function teamChip(name){ if(!name) return ''; const c=teamColor(name); const url=teamLogoUrl(name);
+  const icon = url ? `<span class="tci"><img src="${esc(url)}" alt="" loading="lazy"></span>` : `<i style="background:${c}"></i>`;
+  return `<span class="tchip" data-teamnav="${esc(name)}" title="Open ${esc(name)}" style="--tc:${c};--tcbg:${c}22">${icon}${esc(name)}</span>`; }
 // clickable player name(s) — deep-link to the player's card
 function playerLink(n){ return n? `<span class="pclick" data-player="${esc(n)}">${esc(n)}</span>` : ''; }
 function playersLinked(p1,p2){ return [p1,p2].filter(Boolean).map(playerLink).join('<span class="psep"> / </span>'); }
@@ -1359,6 +1374,7 @@ function openTeamsModal(){
       <div class="err" id="tmErr"></div>
       <div id="teamList">${curTeams().length?curTeams().map(t=>`
         <div class="teamrow" data-team="${esc(t.name)}">
+          <button type="button" class="tlogo" title="Team icon — tap to upload">${t.logo?`<img src="${esc(t.logo)}" alt="">`:'🛡️'}</button>
           <input type="color" class="tcolor" value="${(t.color||'#888888').slice(0,7)}" title="Team colour">
           <input class="tname" value="${esc(t.name)}">
           <span class="tcount subtle">${counts[t.name]||0}</span>
@@ -1385,6 +1401,10 @@ function openTeamsModal(){
       if(patch.name && curTeams().some(t=>t.name.toLowerCase()===patch.name.toLowerCase() && t.name!==cur)){ nameI.value=cur; toast('A team with that name exists'); return; }
       try{ await store.updateTeam(state.tournamentId, cur,patch); if(patch.name) row.dataset.team=patch.name; await loadAll(); render(); }catch(e){ toast('Could not save team'); } };
     nameI.addEventListener('change',saveEdit); colorI.addEventListener('change',saveEdit);
+    row.querySelector('.tlogo').onclick=async()=>{ const tn=row.dataset.team; const f=await pickImage(); if(!f) return;
+      toast('Uploading icon…');
+      try{ const data=await resizeImage(f,256,0.85,true); const url=await store.saveImage(data,`team/${state.tournamentId}/${teamSlug(tn)}.jpg`); await store.updateTeam(state.tournamentId,tn,{logo:url}); await loadAll(); render(); openTeamsModal(); toast('Team icon saved'); }
+      catch(e){ toast(e.message||'Upload failed'); } };
     row.querySelector('.tdel').onclick=async()=>{ const tn=row.dataset.team; const cnt=counts[tn]||0; if(!confirm(`Delete team "${tn}"?${cnt?` Its ${cnt} player${cnt!==1?'s':''} will be unassigned.`:''}`)) return; try{ await store.removeTeam(state.tournamentId, tn); await loadAll(); render(); openTeamsModal(); toast('Team deleted'); }catch(e){ toast('Could not delete'); } };
   });
 }
@@ -1435,6 +1455,7 @@ function renderTeams(el){
       return `<div class="card teamcard ${open?'open':''}" id="${teamSlug(t.name)}">
         <button class="teamcard-head" data-toggle="${esc(t.name)}" style="border-left:4px solid ${t.color}">
           <span class="chev">${I.chevron}</span>
+          ${teamBadge(t.name,50)}
           <h3>${esc(t.name)}</h3>
           <span class="subtle thd-meta">${players.length} player${players.length!==1?'s':''} · <b style="color:var(--text)">${ts.won}W–${ts.lost}L</b>${cap?` · <span class="captag">★ ${esc(cap)}</span>`:''}</span>
         </button>
