@@ -369,9 +369,11 @@ th.sortable:hover{color:var(--text)}
 .stagefmt{display:flex;flex-direction:column;gap:7px}
 .sfrow{display:flex;align-items:center;gap:8px}
 .sfrow .sflabel{flex:1;font-size:13px;font-weight:700;min-width:0}
+.sfrow .sfname{flex:1;min-width:0;padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:13px;font-weight:700}
+.sfrow .sfname:focus{outline:none;border-color:var(--accent)}
 .sfrow select{padding:7px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg);font-size:13px;font-weight:600}
-.sfrow .sfbo{width:112px} .sfrow .sfpts{width:92px}
-@media(max-width:460px){.sfrow .sfbo,.sfrow .sfpts{width:auto;flex:1}}
+.sfrow .sfbo{width:104px} .sfrow .sfpts{width:84px} .sfrow .sfdel{width:32px;height:32px;flex-shrink:0}
+@media(max-width:460px){.sfrow{flex-wrap:wrap}.sfrow .sfname{flex-basis:100%}.sfrow .sfbo,.sfrow .sfpts{flex:1}}
 </style>
 </head>
 <body>
@@ -547,6 +549,10 @@ const store = {
     if(useDB){ const {error}=await sb.from('matches').update({best_of,points}).eq('tournament_id',tid).eq('stage',stage).neq('status','completed'); if(error)throw error; return; }
     this._saveM(this._lsM().map(m=>(m.tournament_id===tid && (m.stage||'League')===stage && m.status!=='completed')?{...m,best_of,points}:m));
   },
+  async renameStage(tid, oldName, newName){
+    if(useDB){ const {error}=await sb.from('matches').update({stage:newName}).eq('tournament_id',tid).eq('stage',oldName); if(error)throw error; return; }
+    this._saveM(this._lsM().map(m=>(m.tournament_id===tid && (m.stage||'League')===oldName)?{...m,stage:newName}:m));
+  },
   _lsP(){ try{return JSON.parse(localStorage.getItem(LS_P)||'{}')}catch(e){return {}} },
   _saveP(o){ try{localStorage.setItem(LS_P,JSON.stringify(o)); return true;}catch(e){return false;} },
   async getPlayers(){
@@ -673,6 +679,17 @@ function computeTeamStats(ms){
 }
 // per-stage default format (best-of + points), configured on the tournament
 function stageFormat(t, stage){ const c=(t&&t.stage_config&&t.stage_config[stage])||null; return { best_of:(c&&c.best_of)||3, points:(c&&c.points)||21 }; }
+// a tournament's stages (ordered): defined in stage_config, plus any stage used by its matches, else the defaults
+function tournamentStages(t){
+  const cfg=(t&&t.stage_config)||{};
+  const used=new Set(state.matches.filter(m=>m.tournament_id===(t&&t.id)).map(m=>m.stage||'League'));
+  const names=new Set([...Object.keys(cfg), ...used]);
+  if(!names.size) STAGES.forEach(s=>names.add(s));
+  const defIdx=n=>{ const i=STAGES.indexOf(n); return i<0?500:i; };
+  return [...names].map(name=>{ const c=cfg[name]||{}; return { name, best_of:c.best_of||3, points:c.points||21, order:(c.order!=null?c.order:defIdx(name)) }; })
+    .sort((a,b)=>a.order-b.order||a.name.localeCompare(b.name));
+}
+const tStageNames = t => tournamentStages(t).map(s=>s.name);
 
 /* ================================================================
    ANALYTICS
@@ -826,7 +843,7 @@ function renderMatches(el){
   const t=curTournament();
   const ms=tournamentMatches();
   if(!t){ el.innerHTML=emptyState('No tournament selected','Create one on the Tournaments tab to start tracking matches.',I.trophy); return; }
-  const stageIdx = s => { const i=STAGES.indexOf(s); return i<0?STAGES.length:i; };
+  const stageOrder=tStageNames(t); const stageIdx = s => { const i=stageOrder.indexOf(s); return i<0?stageOrder.length:i; };
   const byStage={};
   ms.forEach(m=>{ const s=m.stage||'League'; (byStage[s]=byStage[s]||[]).push(m); });
   const stages=Object.keys(byStage).sort((a,b)=>stageIdx(a)-stageIdx(b)||a.localeCompare(b));
@@ -1194,18 +1211,16 @@ function openMatchModal(id){
   const t1=existing?(existing.team1||sideTeam(existing,1)||tl[0]):tl[0];
   const t2=existing?(existing.team2||sideTeam(existing,2)||(tl[1]||tl[0])):(tl[1]||tl[0]);
   const curTour=curTournament();
-  const fmt0 = existing ? {best_of:bestOf(existing), points:existing.points||21} : stageFormat(curTour, 'League');
+  const sNames=tStageNames(curTour);
+  const defStage=existing?existing.stage:(sNames[0]||'League');
   const teamSel=(idv,sel)=>`<select id="${idv}" class="teamsel">${tl.map(t=>`<option ${t===sel?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
   openModal(`
     <div class="modal-head"><h3>${existing?'Edit match':'Add match'}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="mErr"></div>
-      <div class="field"><label>Stage</label><select id="fStage">${STAGES.map(s=>`<option ${((existing&&existing.stage===s)||(!existing&&s==='League'))?'selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="row2">
-        <div class="field"><label>Format</label><select id="fBestOf"><option value="3" ${fmt0.best_of===3?'selected':''}>Best of 3</option><option value="5" ${fmt0.best_of===5?'selected':''}>Best of 5</option></select></div>
-        <div class="field"><label>Points / game</label><select id="fPoints"><option value="21" ${fmt0.points===21?'selected':''}>21 points</option><option value="15" ${fmt0.points===15?'selected':''}>15 points</option></select></div>
+      <div class="field"><label>Stage</label><select id="fStage">${sNames.map(s=>`<option ${s===defStage?'selected':''}>${esc(s)}</option>`).join('')}</select>
+        <div class="hint" id="fmtHint" style="margin-top:6px"></div>
       </div>
-      <div class="hint" style="margin-top:-6px;margin-bottom:12px">Format defaults from the stage's setting (change stage defaults in the tournament editor). You can still override it here.</div>
       <div class="vsrow">
         <div class="teamfield a">${teamSel('tA',t1)}<select id="a1" class="psel"></select><select id="a2" class="psel"></select></div>
         <div class="vsbadge">vs</div>
@@ -1226,9 +1241,10 @@ function openMatchModal(id){
   };
   fill('#a1','#tA',existing?existing.team1_p1:'',false); fill('#a2','#tA',existing?existing.team1_p2:'',true);
   fill('#b1','#tB',existing?existing.team2_p1:'',false); fill('#b2','#tB',existing?existing.team2_p2:'',true);
+  const showFmt=()=>{ const f=stageFormat(curTour, modalEl.querySelector('#fStage').value); modalEl.querySelector('#fmtHint').textContent=`Format: best of ${f.best_of} · ${f.points} points/game (set per stage in the tournament editor).`; };
   modalEl.querySelector('#tA').onchange=()=>{ fill('#a1','#tA','',false); fill('#a2','#tA','',true); };
   modalEl.querySelector('#tB').onchange=()=>{ fill('#b1','#tB','',false); fill('#b2','#tB','',true); };
-  modalEl.querySelector('#fStage').onchange=(e)=>{ const f=stageFormat(curTour, e.target.value); modalEl.querySelector('#fBestOf').value=String(f.best_of); modalEl.querySelector('#fPoints').value=String(f.points); };
+  modalEl.querySelector('#fStage').onchange=showFmt; showFmt();
   modalEl.querySelector('#saveMatch').onclick=async()=>{
     const val=k=>modalEl.querySelector(k).value;
     const tA=val('#tA'), tB=val('#tB'), a1=val('#a1'), a2=val('#a2'), b1=val('#b1'), b2=val('#b2');
@@ -1236,7 +1252,8 @@ function openMatchModal(id){
     if(!a1||!b1){ err.textContent='Pick Player 1 for each team. If a list is empty, add players to that team on the Players tab first.'; err.classList.add('show'); return; }
     const chosen=[a1,a2,b1,b2].filter(Boolean);
     if(new Set(chosen).size!==chosen.length){ err.textContent='A player can\'t appear twice in the same match.'; err.classList.add('show'); return; }
-    const patch={ stage:val('#fStage'), best_of:parseInt(val('#fBestOf'),10), points:parseInt(val('#fPoints'),10),
+    const stage=val('#fStage'); const f=stageFormat(curTour, stage);
+    const patch={ stage, best_of:f.best_of, points:f.points,
       team1:tA, team2:tB, team1_p1:a1, team1_p2:a2||null, team2_p1:b1, team2_p2:b2||null };
     try{
       if(existing) await store.updateMatch(id,patch);
@@ -1312,13 +1329,15 @@ function openTournamentModal(id){
         </div>
         <div class="hint">Upload the poster so everyone can view the full schedule.</div>
       </div>
-      <div class="field"><label>Match format per stage</label>
-        <div class="stagefmt">${STAGES.map(s=>{ const f=stageFormat(t,s); return `<div class="sfrow" data-stage="${esc(s)}">
-          <span class="sflabel">${esc(s)}</span>
-          <select class="sfbo"><option value="3" ${f.best_of===3?'selected':''}>Best of 3</option><option value="5" ${f.best_of===5?'selected':''}>Best of 5</option></select>
-          <select class="sfpts"><option value="21" ${f.points===21?'selected':''}>21 pts</option><option value="15" ${f.points===15?'selected':''}>15 pts</option></select>
-        </div>`;}).join('')}</div>
-        <div class="hint">New matches in each stage use these. Saving also updates existing <b>scheduled</b> (unplayed) matches to match.</div>
+      <div class="field"><label>Stages &amp; match format</label>
+        <div class="stagefmt" id="stageList">${tournamentStages(t).map(s=>`<div class="sfrow" data-orig="${esc(s.name)}">
+          <input class="sfname" value="${esc(s.name)}" placeholder="Stage name">
+          <select class="sfbo"><option value="3" ${s.best_of===3?'selected':''}>Best of 3</option><option value="5" ${s.best_of===5?'selected':''}>Best of 5</option></select>
+          <select class="sfpts"><option value="21" ${s.points===21?'selected':''}>21 pts</option><option value="15" ${s.points===15?'selected':''}>15 pts</option></select>
+          <button type="button" class="iconbtn sfdel" title="Remove stage">${I.trash}</button>
+        </div>`).join('')}</div>
+        <button type="button" class="btn sm" id="addStageBtn" style="margin-top:8px">${I.plus}Add stage</button>
+        <div class="hint">Each stage sets its match format (best-of + points); matches inherit it. Renaming a stage updates its matches; a stage that has matches can't be deleted. Saving also updates scheduled matches to the stage format.</div>
       </div>
       <div class="modal-foot">
         <button class="btn" data-close>Cancel</button>
@@ -1332,11 +1351,35 @@ function openTournamentModal(id){
   modalEl.querySelector('#bClear').onclick=()=>{ pendBanner=''; setThumb('#bThumb','','🏞️'); modalEl.querySelector('#bClear').hidden=true; };
   modalEl.querySelector('#sPick').onclick=async()=>{ const f=await pickImage(); if(!f)return; try{ pendSchedule=await resizeImage(f,1600,0.85,false); setThumb('#sThumb',pendSchedule,'📋'); modalEl.querySelector('#sClear').hidden=false; }catch(e){ toast(e.message); } };
   modalEl.querySelector('#sClear').onclick=()=>{ pendSchedule=''; setThumb('#sThumb','','📋'); modalEl.querySelector('#sClear').hidden=true; };
+  const matchesInStage = sName => state.matches.filter(m=>t && m.tournament_id===t.id && (m.stage||'League')===sName).length;
+  function wireStageRow(row){
+    row.querySelector('.sfdel').onclick=()=>{
+      const orig=row.dataset.orig; const c=orig?matchesInStage(orig):0;
+      if(c>0){ toast(`"${orig}" has ${c} match${c!==1?'es':''} — move or delete them first`); return; }
+      if(modalEl.querySelectorAll('#stageList .sfrow').length<=1){ toast('Keep at least one stage'); return; }
+      row.remove();
+    };
+  }
+  modalEl.querySelectorAll('#stageList .sfrow').forEach(wireStageRow);
+  modalEl.querySelector('#addStageBtn').onclick=()=>{
+    const list=modalEl.querySelector('#stageList');
+    const div=document.createElement('div'); div.className='sfrow';
+    div.innerHTML=`<input class="sfname" placeholder="Stage name" value=""><select class="sfbo"><option value="3">Best of 3</option><option value="5">Best of 5</option></select><select class="sfpts"><option value="21">21 pts</option><option value="15">15 pts</option></select><button type="button" class="iconbtn sfdel" title="Remove stage">${I.trash}</button>`;
+    list.appendChild(div); wireStageRow(div); div.querySelector('.sfname').focus();
+  };
   modalEl.querySelector('#saveT').onclick=async()=>{
     const name=modalEl.querySelector('#tName').value.trim();
     const err=modalEl.querySelector('#tErr');
     if(!name){ err.textContent='Give the tournament a name.'; err.classList.add('show'); return; }
-    const stage_config={}; modalEl.querySelectorAll('.sfrow').forEach(r=>{ stage_config[r.dataset.stage]={best_of:parseInt(r.querySelector('.sfbo').value,10), points:parseInt(r.querySelector('.sfpts').value,10)}; });
+    const rows=[...modalEl.querySelectorAll('#stageList .sfrow')];
+    const stage_config={}; const renames=[]; const seen=new Set();
+    for(let i=0;i<rows.length;i++){ const r=rows[i]; const nm=r.querySelector('.sfname').value.trim();
+      if(!nm){ err.textContent='Every stage needs a name.'; err.classList.add('show'); return; }
+      if(seen.has(nm.toLowerCase())){ err.textContent=`Two stages are named "${nm}".`; err.classList.add('show'); return; }
+      seen.add(nm.toLowerCase());
+      stage_config[nm]={ best_of:parseInt(r.querySelector('.sfbo').value,10), points:parseInt(r.querySelector('.sfpts').value,10), order:i };
+      const orig=r.dataset.orig; if(orig && orig!==nm) renames.push({orig, nm});
+    }
     const patch={ name, edition:modalEl.querySelector('#tEd').value.trim()||null, start_date:modalEl.querySelector('#tDate').value||null, status:modalEl.querySelector('#tStatus').value, stage_config };
     const btn=modalEl.querySelector('#saveT'); btn.disabled=true; btn.textContent='Saving…';
     try{
@@ -1349,7 +1392,8 @@ function openTournamentModal(id){
       if(typeof pendSchedule==='string' && pendSchedule.startsWith('data:')) imgPatch.schedule_url=await store.saveImage(pendSchedule,`tournament/${tid}/schedule.jpg`);
       else if(pendSchedule==='') imgPatch.schedule_url=null;
       if(Object.keys(imgPatch).length) await store.updateTournament(tid,imgPatch);
-      for(const s of STAGES){ const f=stage_config[s]; if(f) await store.applyStageFormat(tid, s, f.best_of, f.points); }
+      for(const rn of renames) await store.renameStage(tid, rn.orig, rn.nm);
+      for(const s in stage_config){ const f=stage_config[s]; await store.applyStageFormat(tid, s, f.best_of, f.points); }
       if(!t) state.tournamentId=tid;
       closeModal(); await loadAll(); if(!t) state.tab='matches'; render(); toast(t?'Tournament updated':'Tournament created');
     }catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); btn.disabled=false; btn.textContent=t?'Save':'Create'; }
