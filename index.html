@@ -1072,6 +1072,7 @@ function renderPlayers(el){
   else roster.sort((a,b)=>dir*((a[col]-b[col])||0)||a.name.localeCompare(b.name));
   const arrow=c=> playerSort.col===c ? (playerSort.dir<0?' ▾':' ▴') : '';
   const sh=(c,label,extra)=>`<th class="sortable ${extra||''}" data-sort="${c}">${label}${arrow(c)}</th>`;
+  const capsAll = state.scope==='all' ? computeCaptainsOverall() : [];
 
   el.innerHTML = `
     <div class="sectionhead"><h2>Players</h2><div class="spacer"></div>
@@ -1080,6 +1081,21 @@ function renderPlayers(el){
         <button data-scope="all" class="${state.scope==='all'?'on':''}">All tournaments</button>
       </div>
     </div>
+    ${capsAll.length?`<div class="card pad" style="margin-bottom:16px">
+      <div class="card-title">${I.trophy}Captains · all tournaments</div>
+      <div class="tablewrap" style="box-shadow:none;border:none">
+        <table id="capAllTable"><thead><tr><th>Captain</th><th class="n">Tours</th><th class="n">P</th><th class="n">W</th><th class="n">L</th><th>Win %</th><th class="n">Pts Diff</th></tr></thead>
+        <tbody>${capsAll.map((c,i)=>`
+          <tr data-player="${esc(c.name)}"><td><div class="rankcell"><span class="rankno ${i===0&&c.played?'top':''}">${c.played?i+1:'·'}</span>${avatar(c.name,26)}<span class="pname">${esc(c.name)}</span></div></td>
+            <td class="n num">${c.tcount}</td>
+            <td class="n num">${c.played}</td>
+            <td class="n num" style="color:${c.won?'var(--win)':'var(--muted)'};font-weight:800">${c.won}</td>
+            <td class="n num" style="color:${c.lost?'var(--danger)':'var(--muted)'}">${c.lost}</td>
+            <td>${c.played?`<span class="num" style="font-weight:800">${Math.round(c.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td>
+            <td class="n">${c.played?`<span class="pill diff ${c.diff>0?'pos':c.diff<0?'neg':''}">${c.diff>0?'+':''}${c.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
+      </div>
+      <div class="hint" style="margin-top:8px">Combined record of each captain's team(s) across every tournament they've led.</div>
+    </div>`:''}
     ${total? `
     <input id="playerSearch" class="searchbox" type="search" placeholder="Search players or teams…" value="${esc(playerSearch)}" autocomplete="off">
     <div class="toolbar">
@@ -1247,7 +1263,6 @@ function gotoMatch(id){ const m=state.matches.find(x=>x.id===id); if(!m) return;
 function renderTeams(el){
   const ms=tournamentMatches();
   const tstats=computeTeamStats(ms);
-  const capsAll=computeCaptainsOverall();
   const pMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
   const tsFor=n=>tstats.find(x=>x.name===n)||{name:n,played:0,won:0,lost:0,pf:0,pa:0,diff:0,pct:0};
   // sortable standings
@@ -1275,21 +1290,6 @@ function renderTeams(el){
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>
-    ${capsAll.length?`<div class="card pad" style="margin-bottom:18px">
-      <div class="card-title">${I.trophy}Captains · all tournaments</div>
-      <div class="tablewrap" style="box-shadow:none;border:none">
-        <table id="capAllTable"><thead><tr><th>Captain</th><th class="n">Tours</th><th class="n">P</th><th class="n">W</th><th class="n">L</th><th>Win %</th><th class="n">Pts Diff</th></tr></thead>
-        <tbody>${capsAll.map((c,i)=>`
-          <tr data-player="${esc(c.name)}"><td><div class="rankcell"><span class="rankno ${i===0&&c.played?'top':''}">${c.played?i+1:'·'}</span>${avatar(c.name,26)}<span class="pname">${esc(c.name)}</span></div></td>
-            <td class="n num">${c.tcount}</td>
-            <td class="n num">${c.played}</td>
-            <td class="n num" style="color:${c.won?'var(--win)':'var(--muted)'};font-weight:800">${c.won}</td>
-            <td class="n num" style="color:${c.lost?'var(--danger)':'var(--muted)'}">${c.lost}</td>
-            <td>${c.played?`<span class="num" style="font-weight:800">${Math.round(c.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td>
-            <td class="n">${c.played?`<span class="pill diff ${c.diff>0?'pos':c.diff<0?'neg':''}">${c.diff>0?'+':''}${c.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
-      </div>
-      <div class="hint" style="margin-top:8px">Combined record of each captain's team(s) across every tournament they've led.</div>
-    </div>`:''}
     ${rows.map(({t,ts})=>{
       const cap=captainOf(t.name);
       const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>{ if(a===cap)return -1; if(b===cap)return 1; return (((pMap[b]||{won:0}).won)-((pMap[a]||{won:0}).won))||a.localeCompare(b); });
@@ -1325,7 +1325,6 @@ function renderTeams(el){
   el.querySelectorAll('.teamcard-head').forEach(h=>h.onclick=()=>{ const n=h.dataset.toggle; if(teamExpanded.has(n)) teamExpanded.delete(n); else teamExpanded.add(n); saveTeamExpanded(); renderTeams(el); });
   el.querySelectorAll('.capstar').forEach(s=>s.onclick=(e)=>{ e.stopPropagation(); e.preventDefault(); setCaptainFlow(s.dataset.team, s.dataset.cap); });
   el.querySelectorAll('.pdrow2').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
-  el.querySelectorAll('#capAllTable tbody tr[data-player]').forEach(r=>r.onclick=()=>openPlayerDetail(r.dataset.player, ms));
   el.querySelectorAll('.tmrow').forEach(b=>b.onclick=()=>gotoMatch(b.dataset.goto));
 }
 
