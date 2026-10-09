@@ -304,6 +304,14 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .gamegrid .gin{width:100%;text-align:center;padding:11px;border:1px solid var(--border2);border-radius:var(--radius-xs);background:var(--surface);font-family:var(--disp);font-size:20px;color:var(--text)}
 .gamegrid .gin:focus{outline:none;border-color:var(--accent-bd);box-shadow:0 0 0 3px var(--accent-bg)}
 .tallyline{font-family:var(--disp);text-align:center;margin:12px 0 2px;color:var(--text2)}
+.confirmbox{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);padding:18px;text-align:center}
+.confirmbox .cpair{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.confirmbox .cpair .glbl{font-family:var(--head);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.confirmbox .cpair .glbl.a{color:var(--teamA)} .confirmbox .cpair .glbl.b{color:var(--teamB)}
+.confirmbox .cvs{font-family:var(--head);font-size:11px;color:var(--muted);font-weight:700}
+.confirmbox .cscore{font-family:var(--disp);font-size:26px;color:var(--text);letter-spacing:1px;font-variant-numeric:tabular-nums;margin:8px 0 2px}
+.confirmbox .cres{font-family:var(--disp);color:var(--text2);font-size:15px;margin-top:4px}
+.confirmbox .cwin{margin-top:12px;font-weight:700;color:var(--win);background:var(--win-bg);border-radius:999px;padding:7px 16px;display:inline-block;font-size:14px}
 /* player detail */
 .pd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:18px}
 @media(max-width:460px){.pd-stats{grid-template-columns:repeat(2,1fr)}}
@@ -763,7 +771,9 @@ const store = {
   // rename a player everywhere (DB FKs are ON UPDATE CASCADE: rosters, matches, captains follow)
   async renamePlayer(oldName,newName){
     if(useDB){ const {error}=await sb.from('players').update({name:newName}).eq('name',oldName); if(error)throw error;
-      await sb.from('matches').update({updated_by:newName}).eq('updated_by',oldName); return; }  // updated_by isn't a FK
+      await sb.from('matches').update({updated_by:newName}).eq('updated_by',oldName);
+      try{ await sb.rpc('app_rename_user',{old_name:oldName,new_name:newName}); }catch(e){ console.warn('app_rename_user:',e); }  // best-effort: carry the login + role grants over to the new name
+      return; }  // updated_by isn't a FK
     const o=this._lsP(); if(o[oldName]){ o[newName]=Object.assign({},o[oldName],{name:newName}); delete o[oldName]; } this._saveP(o);
     this._saveR(this._lsR().map(r=>r.player===oldName?{...r,player:newName}:r));
     this._saveM(this._lsM().map(m=>{ const u={...m}; ['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{ if(u[k]===oldName)u[k]=newName; }); if(u.updated_by===oldName)u.updated_by=newName; return u; }));
@@ -856,6 +866,13 @@ function scopedMatches(){
   return state.matches.filter(m=>m.tournament_id===state.tournamentId);
 }
 function tournamentMatches(){ return state.matches.filter(m=>m.tournament_id===state.tournamentId); }
+// next match still needing a score, in Matches-tab display order (match_no asc), after a given match id
+function nextPendingMatchAfter(afterId){
+  const list=tournamentMatches().slice().sort((a,b)=>(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
+  const idx=list.findIndex(m=>m.id===afterId);
+  for(let i=(idx<0?0:idx+1);i<list.length;i++){ if(list[i].status!=='completed') return list[i].id; }
+  return null;
+}
 // ---- multi-game scoring (best of N, each game to 15/21) ----
 const bestOf   = m => m.best_of || 3;
 const needGames = m => Math.ceil(bestOf(m)/2);           // games required to win the match
@@ -1159,9 +1176,14 @@ async function renderTournamentPeople(tid, box){
   let explicit=[], captains=[], umps=[];
   try{ const {data}=await sb.rpc('app_list_admins',{su,sp,tid}); if(data&&data.ok){ explicit=data.explicit||[]; captains=data.captains||[]; } }catch(e){}
   try{ const {data}=await sb.rpc('app_list_umpires',{su,sp,tid}); if(data&&data.ok) umps=data.umpires||[]; }catch(e){}
-  const capLc=captains.map(c=>c.toLowerCase());
+  // captains now arrive as {name, has_login}; tolerate old plain-string shape too
+  const caps=captains.map(c=>typeof c==='string'?{name:c,has_login:true}:c);
+  const capLc=caps.map(c=>c.name.toLowerCase());
   const row=(n,badge,rmCls)=>`<div class="set-row" style="padding:6px 0;border-bottom:1px solid var(--border)"><div class="sr-main" style="display:flex;align-items:center;gap:8px">${avatar(n,26)}<span class="t">${esc(n)}</span>${badge||''}</div>${rmCls?`<button class="btn sm ghost danger ${rmCls}" data-u="${esc(n)}" style="flex:none">Remove</button>`:'<span class="subtle" style="font-size:11px">auto</span>'}</div>`;
-  const admRows = captains.map(n=>row(n,'<span class="captag">captain</span>',null)).join('')
+  // captain with a login = auto-admin (read-only); captain without = offer to create one
+  const capRow=(c)=> c.has_login ? row(c.name,'<span class="captag">captain</span>',null)
+    : `<div class="set-row" style="padding:6px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:6px"><div class="sr-main" style="display:flex;align-items:center;gap:8px">${avatar(c.name,26)}<span class="t">${esc(c.name)}</span><span class="captag">captain</span></div><div style="display:flex;gap:6px;flex:none;align-items:center"><input class="tpCapPass" type="text" placeholder="set password" style="width:120px;${ps}"><button class="btn sm primary tpCapEnable" data-u="${esc(c.name)}" style="flex:none">Enable login</button></div></div>`;
+  const admRows = caps.map(capRow).join('')
     + explicit.filter(n=>!capLc.includes(n.toLowerCase())).map(n=>row(n,'','tpAdmRm')).join('');
   box.innerHTML=`
     <div style="font-size:11.5px;font-weight:800;letter-spacing:.04em;color:var(--text2);margin:2px 0 4px">ADMINS <span class="subtle" style="font-weight:600;letter-spacing:0">· full edit of this tournament</span></div>
@@ -1181,6 +1203,8 @@ async function renderTournamentPeople(tid, box){
   const call=async(fn,args,okMsg,action,detail)=>{ try{ const {data}=await sb.rpc(fn,args); if(data&&data.ok){ if(action) store._audit(action,detail); renderTournamentPeople(tid,box); toast(okMsg); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
   box.querySelectorAll('.tpAdmRm').forEach(b=>b.onclick=()=> call('app_set_admin',{su,sp,target:b.dataset.u,pass:'',tid,on_flag:false},'Admin removed','admin.unset',{username:b.dataset.u,tournament:tid}));
   box.querySelectorAll('.tpUmpRm').forEach(b=>b.onclick=()=> call('app_set_umpire',{su,sp,target:b.dataset.u,pass:'',tid,on_flag:false},'Umpire removed','umpire.remove',{username:b.dataset.u,tournament:tid}));
+  box.querySelectorAll('.tpCapEnable').forEach(b=>b.onclick=()=>{ const inp=b.previousElementSibling, pass=(inp&&inp.value||'').trim(); if(!pass){ toast('Set a password'); return; }
+    call('app_set_admin',{su,sp,target:b.dataset.u,pass,tid,on_flag:true},'Login enabled','admin.set',{username:b.dataset.u,tournament:tid}); });
   box.querySelector('#tpAdmAdd').onclick=()=>{ const name=box.querySelector('#tpAdmName').value, pass=box.querySelector('#tpAdmPass').value||''; if(!name){ toast('Pick a name'); return; }
     call('app_set_admin',{su,sp,target:name,pass,tid,on_flag:true},'Admin added','admin.set',{username:name,tournament:tid}); };
   box.querySelector('#tpUmpAdd').onclick=()=>{ const name=box.querySelector('#tpUmpName').value, pass=box.querySelector('#tpUmpPass').value||''; if(!name){ toast('Pick a name'); return; }
@@ -1848,11 +1872,11 @@ function openMatchModal(id){
   };
 }
 
-function openScoreModal(id){
+function openScoreModal(id, prefillGames){
   const m=state.matches.find(x=>x.id===id); if(!m) return;
   if(!requireScorer(m.tournament_id)) return;
   const bo=bestOf(m), pts=m.points||21, need=needGames(m);
-  const prev=gamesOf(m);
+  const prev=prefillGames||gamesOf(m);
   const rows=Array.from({length:bo},(_,i)=>prev[i]||{s1:'',s2:''});
   openModal(`
     <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
@@ -1878,7 +1902,42 @@ function openScoreModal(id){
   const readGames=()=>{ const gs=[]; for(let i=0;i<bo;i++){ const a=modalEl.querySelector('.g1[data-i="'+i+'"]').value, b=modalEl.querySelector('.g2[data-i="'+i+'"]').value; if(a!==''&&b!==''){ gs.push({s1:parseInt(a,10), s2:parseInt(b,10)}); } } return gs; };
   const updateTally=()=>{ const gs=readGames(); let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else if(w===2)b++; }); const el=modalEl.querySelector('#tally'); el.textContent = gs.length? ('Games won:  '+a+' – '+b) : ''; el.style.color = (Math.max(a,b)>=need)?'var(--win)':'var(--text2)'; };
   modalEl.querySelectorAll('.gin').forEach(inp=>inp.addEventListener('input',updateTally)); updateTally();
-  modalEl.querySelector('#saveScore').onclick=async()=>{
+  // Step 2: confirm the summary, then commit (and auto-advance to the next pending match)
+  const showConfirm=(gs)=>{
+    let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else b++; });
+    const t1=team(m.team1_p1,m.team1_p2), t2=team(m.team2_p1,m.team2_p2);
+    const winPair = a>b ? t1 : t2;
+    const scoreLine = gs.map(g=>`${g.s1}–${g.s2}`).join(', ');
+    const commit=async()=>{ try{
+        await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()});
+        closeModal(); await loadAll(); render();
+        const nextId=nextPendingMatchAfter(id);
+        if(nextId){ toast('Result saved'); openScoreModal(nextId); }   // one at a time: open the next match needing a score
+        else toast('All matches recorded 🎉');
+      }catch(e){ const ce=modalEl.querySelector('#cErr'); if(ce){ ce.textContent='Could not save: '+(e.message||e); ce.classList.add('show'); } } };
+    openModal(`
+      <div class="modal-head"><h3>Confirm result · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
+      <div class="modal-body">
+        <div class="err" id="cErr"></div>
+        <p class="subtle" style="text-align:center;margin:-2px 0 14px">Check this is right before saving.</p>
+        <div class="confirmbox">
+          <div class="cpair"><span class="glbl a">${esc(t1)}</span><span class="cvs">vs</span><span class="glbl b">${esc(t2)}</span></div>
+          <div class="cscore">${esc(scoreLine)}</div>
+          <div class="cres">Games won: <strong>${a} – ${b}</strong></div>
+          <div class="cwin">🏆 ${esc(winPair)} wins</div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn" id="backScore">Back</button>
+          <button class="btn primary" id="confirmSave">${I.check}Confirm &amp; save</button>
+        </div>
+      </div>`);
+    modalEl.querySelector('#backScore').onclick=()=>openScoreModal(id, gs);   // back to editing, scores kept
+    modalEl.querySelector('#confirmSave').onclick=async()=>{
+      if(!actor()){ openUserModal(commit); return; }   // ask name once, then save with attribution
+      await commit();
+    };
+  };
+  modalEl.querySelector('#saveScore').onclick=()=>{
     const err=modalEl.querySelector('#sErr'); const gs=readGames();
     if(!gs.length){ err.textContent='Enter at least one game score.'; err.classList.add('show'); return; }
     for(let i=0;i<gs.length;i++){ const g=gs[i];
@@ -1889,10 +1948,7 @@ function openScoreModal(id){
       if(hi-lo < 2){ err.textContent=`Game ${i+1} isn't finished — at ${pts-1}–${pts-1} it's deuce; you must win by 2 (e.g. ${pts+1}–${pts-1}).`; err.classList.add('show'); return; } }
     let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else b++; });
     if(Math.max(a,b)<need){ err.textContent='Best of '+bo+': a team needs to win '+need+' games. Enter the remaining game(s).'; err.classList.add('show'); return; }
-    const commit=async()=>{ try{ await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Result saved'); }
-      catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); } };
-    if(!actor()){ openUserModal(commit); return; }   // ask name once, then save with attribution
-    await commit();
+    showConfirm(gs);   // validation passed → confirm before committing
   };
   modalEl.querySelector('#clearScore')?.addEventListener('click',async()=>{
     const commit=async()=>{ try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){} };
