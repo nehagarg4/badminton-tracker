@@ -36,6 +36,7 @@ alter table players add column if not exists team text;
 create table if not exists teams (
   name       text primary key,
   color      text,
+  captain    text,          -- player name of the team captain (optional)
   created_at timestamptz not null default now()
 );
 

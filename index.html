@@ -368,6 +368,10 @@ th.sortable:hover{color:var(--text)}
 .pdrow2{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;text-align:left;width:100%}
 .pdrow2:hover{background:var(--surface2)}
 .pdrow2 .pname{flex:1;font-weight:700;font-size:14px;min-width:0}
+.capstar{flex-shrink:0;color:var(--muted);font-size:16px;line-height:1;cursor:pointer;opacity:.5;transition:.12s;padding:2px}
+.capstar:hover{opacity:1;color:var(--gold);transform:scale(1.15)}
+.capstar.on{color:var(--gold);opacity:1}
+.captag{display:inline-block;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--gold);background:rgba(201,151,0,.14);padding:1px 6px;border-radius:999px;margin-left:6px;vertical-align:middle;white-space:nowrap}
 .teammatches{display:flex;flex-direction:column}
 .tmrow{display:flex;align-items:center;gap:10px;padding:9px 6px;border-top:1px solid var(--border);cursor:pointer;font-size:13.5px}
 .tmrow:first-child{border-top:none}
@@ -658,6 +662,19 @@ function winnerOf(m){
 // ---- teams (franchises) ----
 const teamOf = name => (state.players[name] && state.players[name].team) || null;
 const teamColor = t => { const x=state.teams.find(x=>x.name===t); return x?x.color:'#8a94a2'; };
+// ---- captains ---- a team's captain, but only if they're still on that team
+function captainOf(teamName){ const t=state.teams.find(x=>x.name===teamName); const c=t&&t.captain; return (c && teamOf(c)===teamName) ? c : null; }
+const isCaptain = name => state.teams.some(t=>t.captain===name && teamOf(name)===t.name);
+async function setCaptainFlow(teamName, playerName){
+  const t=state.teams.find(x=>x.name===teamName); if(!t) return;
+  const cur=captainOf(teamName);
+  let next, msg;
+  if(cur===playerName){ next=null; msg=`Remove ${playerName} as captain of ${teamName}?`; }
+  else { next=playerName; msg = cur ? `Make ${playerName} captain of ${teamName}, replacing ${cur}?` : null; }
+  if(msg && !confirm(msg)) return;
+  try{ await store.updateTeam(teamName,{captain:next}); await loadAll(); render(); toast(next?`${playerName} is now captain`:'Captain removed'); }
+  catch(e){ const m=(e&&e.message)||''; toast(/captain|column|schema/i.test(m)?'Run migrate4.sql on Supabase first':'Could not update captain'); }
+}
 function sideTeam(m, side){
   const stored = side===1 ? m.team1 : m.team2;
   if(stored) return stored;
@@ -793,6 +810,11 @@ function renderDashboard(el){
   const leader=stats[0];
   const players=rosterNames(ms);
   const teamStats=computeTeamStats(ms);
+  const statsMap=Object.fromEntries(stats.map(p=>[p.name,p]));
+  const captains=state.teams.map(tm=>{ const cap=captainOf(tm.name); if(!cap) return null;
+    const tRank=teamStats.findIndex(x=>x.name===tm.name); const tS=teamStats.find(x=>x.name===tm.name)||{won:0,lost:0};
+    const pS=statsMap[cap]||{won:0,lost:0,played:0,pct:0}; return {team:tm.name,cap,tRank,tS,pS}; })
+    .filter(Boolean).sort((a,b)=>(a.tRank<0?99:a.tRank)-(b.tRank<0?99:b.tRank));
   const recent=done.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')||b.match_no-a.match_no).slice(0,5);
 
   el.innerHTML = `
@@ -820,6 +842,18 @@ function renderDashboard(el){
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>`:''}
+    ${captains.length?`<div class="card pad" style="margin-bottom:16px">
+      <div class="card-title">${I.trophy}Captains</div>
+      <div class="tablewrap" style="box-shadow:none;border:none">
+        <table id="capTable"><thead><tr><th>Captain</th><th>Team</th><th class="n">Team&nbsp;W–L</th><th class="n">Own&nbsp;W–L</th><th>Own&nbsp;%</th></tr></thead>
+        <tbody>${captains.map(c=>`
+          <tr data-player="${esc(c.cap)}"><td><div class="rankcell">${avatar(c.cap,26)}<span class="pname">${esc(c.cap)}</span></div></td>
+            <td>${teamChip(c.team)}</td>
+            <td class="n num"><b style="color:${c.tS.won?'var(--win)':'inherit'}">${c.tS.won}</b>–${c.tS.lost}</td>
+            <td class="n num">${c.pS.played?`${c.pS.won}–${c.pS.lost}`:'<span class="subtle">—</span>'}</td>
+            <td>${c.pS.played?`<span class="num" style="font-weight:800">${Math.round(c.pS.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td></tr>`).join('')}</tbody></table>
+      </div>
+    </div>`:(state.teams.length?`<div class="card pad" style="margin-bottom:16px"><div class="card-title">${I.trophy}Captains</div><p class="subtle">No captains set yet. On the <b>Teams</b> tab, tap the ★ next to a player to make them captain.</p></div>`:'')}
     <div class="grid2">
       <div class="card pad">
         <div class="card-title">Top Players</div>
@@ -846,6 +880,7 @@ function renderDashboard(el){
       </div>
     </div>`;
   el.querySelectorAll('.pdrow').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
+  el.querySelectorAll('#capTable tbody tr[data-player]').forEach(r=>r.onclick=()=>openPlayerDetail(r.dataset.player, ms));
 }
 function allPlayersInMatches(ms){ const s=new Set(); ms.forEach(m=>['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{if(m[k])s.add(m[k]);})); return [...s]; }
 
@@ -1146,18 +1181,19 @@ function renderTeams(el){
       </div>
     </div>
     ${rows.map(({t,ts})=>{
-      const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>(((pMap[b]||{won:0}).won)-((pMap[a]||{won:0}).won))||a.localeCompare(b));
+      const cap=captainOf(t.name);
+      const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>{ if(a===cap)return -1; if(b===cap)return 1; return (((pMap[b]||{won:0}).won)-((pMap[a]||{won:0}).won))||a.localeCompare(b); });
       const tm=ms.filter(m=>sideTeam(m,1)===t.name||sideTeam(m,2)===t.name).sort((a,b)=>(a.match_no||0)-(b.match_no||0));
       const open=teamExpanded.has(t.name);
       return `<div class="card teamcard ${open?'open':''}" id="${teamSlug(t.name)}">
         <button class="teamcard-head" data-toggle="${esc(t.name)}" style="border-left:4px solid ${t.color}">
           <span class="chev">${I.chevron}</span>
           <h3>${esc(t.name)}</h3>
-          <span class="subtle thd-meta">${players.length} player${players.length!==1?'s':''} · <b style="color:var(--text)">${ts.won}W–${ts.lost}L</b></span>
+          <span class="subtle thd-meta">${players.length} player${players.length!==1?'s':''} · <b style="color:var(--text)">${ts.won}W–${ts.lost}L</b>${cap?` · <span class="captag">★ ${esc(cap)}</span>`:''}</span>
         </button>
         <div class="teamcard-body" ${open?'':'hidden'}>
-          <div class="card-title">Players</div>
-          <div class="teamplayers">${players.length?players.map(n=>{const ps=pMap[n]||{won:0,lost:0};return `<button class="pdrow2" data-player="${esc(n)}">${avatar(n,32)}<span class="pname">${esc(n)}</span><span class="subtle num">${ps.won}W–${ps.lost}L</span></button>`;}).join(''):'<p class="subtle">No players assigned yet.</p>'}</div>
+          <div class="card-title">Players <span class="subtle" style="font-weight:600;text-transform:none;letter-spacing:0">· tap ★ to set captain</span></div>
+          <div class="teamplayers">${players.length?players.map(n=>{const ps=pMap[n]||{won:0,lost:0};const isc=cap===n;return `<button class="pdrow2" data-player="${esc(n)}">${avatar(n,32)}<span class="pname">${esc(n)}${isc?'<span class="captag">Captain</span>':''}</span><span class="subtle num">${ps.won}W–${ps.lost}L</span><span class="capstar ${isc?'on':''}" data-team="${esc(t.name)}" data-cap="${esc(n)}" title="${isc?'Remove as captain':'Make captain'}">★</span></button>`;}).join(''):'<p class="subtle">No players assigned yet.</p>'}</div>
           <div class="card-title" style="margin-top:16px">Matches</div>
           <div class="teammatches">${tm.length?tm.map(m=>{
             const isA=sideTeam(m,1)===t.name; const opp=isA?sideTeam(m,2):sideTeam(m,1);
@@ -1177,6 +1213,7 @@ function renderTeams(el){
   el.querySelector('#manageTeamsBtn')?.addEventListener('click',openTeamsModal);
   el.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{ const c=th.dataset.sort; if(teamSort.col===c) teamSort.dir*=-1; else teamSort={col:c, dir:(c==='team'?1:-1)}; renderTeams(el); });
   el.querySelectorAll('.teamcard-head').forEach(h=>h.onclick=()=>{ const n=h.dataset.toggle; if(teamExpanded.has(n)) teamExpanded.delete(n); else teamExpanded.add(n); saveTeamExpanded(); renderTeams(el); });
+  el.querySelectorAll('.capstar').forEach(s=>s.onclick=(e)=>{ e.stopPropagation(); e.preventDefault(); setCaptainFlow(s.dataset.team, s.dataset.cap); });
   el.querySelectorAll('.pdrow2').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
   el.querySelectorAll('.tmrow').forEach(b=>b.onclick=()=>gotoMatch(b.dataset.goto));
 }
