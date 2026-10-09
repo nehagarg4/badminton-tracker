@@ -73,6 +73,7 @@ a:hover{color:var(--text)}
 .iconbtn{width:40px;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface2);display:inline-flex;align-items:center;justify-content:center;color:var(--text2);transition:.12s}
 .iconbtn:hover{background:var(--surface3);color:var(--text)}
 .iconbtn[disabled]{opacity:.3;pointer-events:none}
+.iconbtn.active{background:var(--accent);color:var(--accent-ink);border-color:transparent}
 .iconbtn svg{width:18px;height:18px}
 .conn{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:var(--surface2);color:var(--text2)}
 .conn .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
@@ -468,6 +469,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
     </div>
     <span id="connPill" class="conn local" title="Data source"><span class="dot"></span><span id="connText">Local</span></span>
     <button id="userPill" class="conn user" title="Set your name — used to label who edits scores"><span class="dot"></span><span id="userText">Log in</span></button>
+    <button class="iconbtn" id="adminBtn" title="Admin" aria-label="Admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></button>
     <button class="iconbtn" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"></button>
   </div>
 </header>
@@ -489,6 +491,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <section class="page" id="page-tournaments"></section>
   <section class="page" id="page-settings"></section>
 </main>
+<div id="adminScreen" style="display:none"></div>
 
 <div class="modal-overlay" id="modalOverlay"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
@@ -530,14 +533,25 @@ const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const USER_KEY='bad_user';
 function getUser(){ try{ return (localStorage.getItem(USER_KEY)||'').trim(); }catch(e){ return ''; } }
 function setUser(n){ try{ localStorage.setItem(USER_KEY,(n||'').trim()); }catch(e){} }
-const stampBy = () => ({ updated_by:getUser()||null, updated_at:nowISO() });
+const stampBy = () => ({ updated_by:actor()||null, updated_at:nowISO() });
+
+/* ---------- admin auth (Supabase) ---------- */
+let adminSession=null;
+function isAdmin(){ return !!adminSession; }
+function adminName(){ const e=adminSession&&adminSession.user&&adminSession.user.email; return e? e.split('@')[0] : null; }
+function actor(){ return isAdmin() ? (adminName()||'admin') : (getUser()||null); }   // who did an action
+async function initAuth(){ if(!useDB||!sb||!sb.auth) return; try{ const {data}=await sb.auth.getSession(); adminSession=(data&&data.session)||null;
+  sb.auth.onAuthStateChange((_e,s)=>{ const was=!!adminSession; adminSession=s||null; renderUserPill(); if(was!==!!adminSession) toast(adminSession?'Signed in as admin':'Signed out'); render(); }); }catch(e){} }
+// editing is admin-only in live mode; on-device (?local) mode has no backend, so allow
+function requireAdmin(){ if(!useDB || isAdmin()) return true; toast('Admin login required'); location.hash='#admin'; render(); return false; }
 function relTime(iso){ if(!iso) return ''; const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
   if(s<45) return 'just now'; if(s<90) return '1m ago';
   const m=s/60; if(m<60) return Math.round(m)+'m ago';
   const h=m/60; if(h<24) return Math.round(h)+'h ago';
   const d=h/24; if(d<7) return Math.round(d)+'d ago';
   try{ return new Date(iso).toLocaleDateString(undefined,{month:'short',day:'numeric'}); }catch(e){ return ''; } }
-function renderUserPill(){ const el=document.getElementById('userText'); if(!el) return; const u=getUser(); el.textContent=u?('Logged in as '+u):'Log in'; const p=document.getElementById('userPill'); if(p){ p.classList.toggle('named',!!u); p.title=u?('Logged in as '+u+' — tap to change'):'Log in — pick who is using this device'; } }
+function renderUserPill(){ const el=document.getElementById('userText'); if(el){ const u=getUser(); el.textContent=u?('Logged in as '+u):'Log in'; const p=document.getElementById('userPill'); if(p){ p.classList.toggle('named',!!u); p.title=u?('Logged in as '+u+' — tap to change'):'Log in — pick who is using this device'; } }
+  const ab=document.getElementById('adminBtn'); if(ab){ ab.classList.toggle('active',isAdmin()); ab.title=isAdmin()?('Admin · '+(adminName()||'signed in')):'Admin sign-in'; } }
 function openUserModal(afterSet){
   const cur=getUser();
   const names=Object.keys(state.players||{}).sort((a,b)=>a.localeCompare(b));
@@ -774,7 +788,7 @@ const store = {
    ================================================================ */
 store._audit = async function(action, detail){
   if(!useDB || !sb) return;
-  try{ await sb.from('audit_log').insert({ actor:(typeof getUser==='function'?getUser():'')||null, action, detail:detail||null }); }catch(e){}
+  try{ await sb.from('audit_log').insert({ actor:(typeof actor==='function'?actor():'')||null, action, detail:detail||null }); }catch(e){}
 };
 (function(){
   const sanit=v=>{ try{ return JSON.parse(JSON.stringify(v,(k,val)=> (typeof val==='string'&&val.length>180)?('['+val.length+' chars]'):val)); }catch(e){ return null; } };
@@ -838,6 +852,7 @@ const teamColor = t => { const x=curTeams().find(x=>x.name===t); return x?x.colo
 function captainOf(teamName){ const t=curTeams().find(x=>x.name===teamName); const c=t&&t.captain; return (c && teamOf(c)===teamName) ? c : null; }
 const isCaptain = name => curTeams().some(t=>t.captain===name && teamOf(name)===t.name);
 async function setCaptainFlow(teamName, playerName){
+  if(!requireAdmin()) return;
   const t=curTeams().find(x=>x.name===teamName); if(!t) return;
   const cur=captainOf(teamName);
   let next, msg;
@@ -988,12 +1003,60 @@ function renderHeader(){
     || '<option>No tournaments</option>';
 }
 
+const isAdminRoute=()=> location.hash==='#admin' || /\/admin\/?$/.test(location.pathname);
 function render(){
-  renderHeader();
+  renderHeader(); renderUserPill();
+  const asc=document.getElementById('adminScreen'), main=document.querySelector('main.wrap'), tabs=document.getElementById('tabs');
+  if(isAdminRoute()){ tabs.style.display='none'; main.style.display='none'; asc.style.display='block'; renderAdmin(asc); return; }
+  tabs.style.display=''; main.style.display=''; asc.style.display='none';
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+state.tab); pg.classList.add('active');
   ({dashboard:renderDashboard, matches:renderMatches, players:renderPlayers, teams:renderTeams, tournaments:renderTournaments, settings:renderSettings}[state.tab])(pg);
+}
+
+/* ---- Admin (/admin or #admin) ---- */
+function renderAdmin(el){
+  const back=`<button class="btn sm" id="adBack">${isAdmin()?'Back to app':'Back'}</button>`;
+  if(!useDB){ el.innerHTML=`<div class="wrap"><div class="set-wrap"><div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div><div class="set-card"><p class="subtle">Admin sign-in needs the live site (Supabase). You're in on-device mode.</p></div></div></div>`; el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); }; return; }
+  if(!isAdmin()){
+    el.innerHTML=`<div class="wrap"><div class="set-wrap" style="max-width:440px">
+      <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
+      <div class="set-card"><h2>Sign in</h2>
+        <div class="err" id="adErr"></div>
+        <div class="field"><label>Email</label><input id="adEmail" type="email" autocomplete="username" placeholder="admin@example.com"></div>
+        <div class="field"><label>Password</label><input id="adPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <div class="modal-foot"><button class="btn primary" id="adLogin" style="flex:1;justify-content:center">Sign in</button></div>
+        <div class="hint" style="margin-top:12px">Admin accounts are created in Supabase. Only admins can edit scores &amp; data; everyone else sees a read-only view.</div>
+      </div></div></div>`;
+    el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
+    const doLogin=async()=>{ const email=(el.querySelector('#adEmail').value||'').trim(), password=el.querySelector('#adPass').value||''; const err=el.querySelector('#adErr');
+      if(!email||!password){ err.textContent='Enter email and password.'; err.classList.add('show'); return; }
+      const btn=el.querySelector('#adLogin'); btn.disabled=true; btn.textContent='Signing in…';
+      const {error}=await sb.auth.signInWithPassword({email,password});
+      if(error){ err.textContent=error.message||'Could not sign in.'; err.classList.add('show'); btn.disabled=false; btn.textContent='Sign in'; store._audit('admin.login_failed',{email}); return; }
+      store._audit('admin.login',{email}); /* onAuthStateChange re-renders */ };
+    el.querySelector('#adLogin').onclick=doLogin;
+    el.querySelector('#adPass').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+    setTimeout(()=>el.querySelector('#adEmail').focus(),60);
+    return;
+  }
+  el.innerHTML=`<div class="wrap"><div class="set-wrap">
+    <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
+    <div class="set-card"><div class="set-row"><div class="sr-main"><div class="t">Signed in as admin</div><div class="d">${esc(adminSession.user.email||'')}</div></div><button class="btn sm danger" id="adLogout">Log out</button></div></div>
+    <div class="set-card danger"><h2>Danger zone</h2>
+      <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept. Cannot be undone.</div></div><button class="btn sm danger" id="adReset">Reset scores</button></div>
+    </div>
+    <div class="set-card"><h2>Activity log</h2><div id="adLog"><p class="subtle">Loading…</p></div></div>
+  </div></div>`;
+  el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
+  el.querySelector('#adLogout').onclick=async()=>{ store._audit('admin.logout',{}); await sb.auth.signOut(); };
+  el.querySelector('#adReset').onclick=async()=>{ const t=curTournament(); if(!t) return; if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Cannot be undone.`)) return; try{ for(const m of tournamentMatches()) await store.updateMatch(m.id,{games:[],score1:null,score2:null,status:'scheduled'}); await loadAll(); toast('Scores reset'); renderAdmin(el); }catch(e){ toast('Could not reset'); } };
+  (async()=>{ const box=el.querySelector('#adLog'); try{ const {data,error}=await sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(150);
+    if(error){ box.innerHTML=`<p class="subtle">Could not load the log (${esc(error.message)}). Make sure migrate7.sql has run.</p>`; return; }
+    if(!data||!data.length){ box.innerHTML='<p class="subtle">No activity recorded yet.</p>'; return; }
+    box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${data.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
+  }catch(e){ box.innerHTML='<p class="subtle">Could not load the log.</p>'; } })();
 }
 
 /* ---- Settings ---- */
@@ -1068,6 +1131,7 @@ function renderSettings(el){
   el.querySelector('#setImport')?.addEventListener('click',openImportModal);
   el.querySelector('#setExport')?.addEventListener('click',()=>{ const ms=tournamentMatches(); const sMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p])); exportCSV(rosterNames(ms).map(n=>sMap[n]||zeroStats(n))); });
   el.querySelector('#setReset')?.addEventListener('click',async()=>{
+    if(!requireAdmin()) return;
     const ms=tournamentMatches().filter(m=>m.status==='completed'||gamesOf(m).length);
     if(!ms.length){ toast('No scores to reset'); return; }
     if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Players and teams are kept. This cannot be undone.`)) return;
@@ -1093,6 +1157,7 @@ function renderDashboard(el){
       ${t?`<span class="subtle">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</span>`:''}
     </div>
     ${!useDB?`<div class="banner" id="dbBanner"><span>${I.flame}</span><div><b>On-device mode.</b> Scores save in this browser only. Add your free Supabase keys (see README) to sync across everyone's phones.</div><span class="x" onclick="this.parentElement.remove()">✕</span></div>`:''}
+    ${(useDB&&!isAdmin())?`<div class="banner" style="cursor:pointer" onclick="location.hash='#admin';render()"><span>${I.shield}</span><div><b>Read-only.</b> Anyone can view scores &amp; standings. <u>Sign in as admin</u> to record and edit results.</div></div>`:''}
     <div class="tiles">
       <div class="tile clk" data-nav="players" title="View players"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
       <div class="tile clk" data-nav="matches" title="View matches"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
@@ -1196,6 +1261,7 @@ function renderMatches(el){
 }
 // swap a match's sequence (match_no) with its neighbour in the same stage's display order
 async function moveMatch(id, dir){
+  if(!requireAdmin()) return;
   const m=state.matches.find(x=>x.id===id); if(!m) return;
   const st=m.stage||'League';
   const sm=state.matches.filter(x=>x.tournament_id===m.tournament_id && (x.stage||'League')===st)
@@ -1361,6 +1427,7 @@ function parseNames(text){
 function pickTextFile(){ return new Promise(res=>{ const i=document.createElement('input'); i.type='file'; i.accept='.csv,.txt,text/csv,text/plain'; i.style.position='fixed'; i.style.left='-9999px'; document.body.appendChild(i); i.onchange=()=>{ const f=(i.files&&i.files[0])||null; i.remove(); res(f); }; i.click(); }); }
 
 function openImportModal(){
+  if(!requireAdmin()) return;
   openModal(`
     <div class="modal-head"><h3>Import players</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
@@ -1394,6 +1461,7 @@ function openImportModal(){
 }
 
 function openAddPlayerModal(){
+  if(!requireAdmin()) return;
   openModal(`
     <div class="modal-head"><h3>Add player</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
@@ -1419,6 +1487,7 @@ function openAddPlayerModal(){
 function teamOptions(selected){ return `<option value="">— No team —</option>`+curTeams().map(t=>`<option value="${esc(t.name)}" ${t.name===selected?'selected':''}>${esc(t.name)}</option>`).join(''); }
 
 function openTeamsModal(){
+  if(!requireAdmin()) return;
   const counts={}; state.rosters.filter(r=>r.tournament_id===state.tournamentId && r.team).forEach(r=>{ counts[r.team]=(counts[r.team]||0)+1; });
   openModal(`
     <div class="modal-head"><h3>Teams</h3><button class="x" data-close>✕</button></div>
@@ -1587,6 +1656,7 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&overlay.classList.
 function playerDatalist(){ return `<datalist id="playerList">${allPlayerNames().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`; }
 
 function openMatchModal(id){
+  if(!requireAdmin()) return;
   const existing = id? state.matches.find(m=>m.id===id) : null;
   const nextNo = existing? existing.match_no : (Math.max(0,...tournamentMatches().map(m=>m.match_no||0))+1);
   const tl = curTeams().map(t=>t.name);
@@ -1652,6 +1722,7 @@ function openMatchModal(id){
 }
 
 function openScoreModal(id){
+  if(!requireAdmin()) return;
   const m=state.matches.find(x=>x.id===id); if(!m) return;
   const bo=bestOf(m), pts=m.points||21, need=needGames(m);
   const prev=gamesOf(m);
@@ -1699,6 +1770,7 @@ function openScoreModal(id){
 }
 
 function openTournamentModal(id){
+  if(!requireAdmin()) return;
   const t=id? state.tournaments.find(x=>x.id===id):null;
   openModal(`
     <div class="modal-head"><h3>${t?'Edit tournament':'New tournament'}</h3><button class="x" data-close>✕</button></div>
@@ -1790,6 +1862,7 @@ function openTournamentModal(id){
 }
 
 function confirmDelete(kind,id){
+  if(!requireAdmin()) return;
   const label = kind==='tournament' ? (state.tournaments.find(t=>t.id===id)?.name||'this tournament') : 'this match';
   const extra = kind==='tournament' ? ' This also deletes all its matches.' : '';
   openModal(`
@@ -1872,6 +1945,7 @@ function oppOf(m,name){
   return inA? [m.team2_p1,m.team2_p2] : [m.team1_p1,m.team1_p2];
 }
 function openRenamePlayer(oldName){
+  if(!requireAdmin()) return;
   openModal(`<div class="modal-head"><h3>Rename player</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="rnErr"></div>
@@ -1898,6 +1972,7 @@ function openRenamePlayer(oldName){
 }
 
 function removePlayerFlow(name){
+  if(!requireAdmin()) return;
   const mc=matchCountFor(name);
   if(mc>0){
     openModal(`
@@ -1962,6 +2037,8 @@ setThemeIcon();
    WIRE UP
    ================================================================ */
 document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b)return; state.tab=b.dataset.tab; render(); });
+document.getElementById('adminBtn').addEventListener('click',()=>{ location.hash = isAdminRoute()?'':'#admin'; render(); });
+window.addEventListener('hashchange',render);
 document.getElementById('tournamentSel').addEventListener('change',e=>{ state.tournamentId=e.target.value; render(); });
 document.getElementById('userPill').addEventListener('click',()=>openUserModal());
 // clicking any team chip opens the Teams page for that team (capture phase so it beats row handlers)
@@ -1974,10 +2051,10 @@ document.addEventListener('click',e=>{ const p=e.target.closest&&e.target.closes
   if(useDB){ pill.className='conn live'; ct.textContent='Live sync'; } else { pill.className='conn local'; ct.textContent='On this device'; }
   renderUserPill();
   try{
+    await initAuth();
     await store.init();
     await loadAll();
     render();
-    if(!getUser()) setTimeout(()=>openUserModal(), 350);   // first visit: ask name up front
   }catch(e){
     document.querySelector('.wrap').innerHTML = `<div class="banner" style="background:var(--danger-bg);color:var(--danger)"><span>${I.flame}</span><div><b>Couldn't load data.</b> ${esc(e.message||e)}<br>Check your Supabase URL/key and that schema.sql has been run.</div></div>`;
   }
