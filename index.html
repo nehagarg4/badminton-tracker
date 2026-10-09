@@ -862,8 +862,8 @@ function gamesOf(m){
   if(m.score1!=null && m.score2!=null) return [{s1:m.score1, s2:m.score2}]; // back-compat: old single-game rows
   return [];
 }
-// a game counts only when the winner actually reached the target points (15/21) and leads
-function gameWin(g,pts){ const s1=+g.s1, s2=+g.s2; if(isNaN(s1)||isNaN(s2)||s1===s2) return 0; if(Math.max(s1,s2) < (pts||21)) return 0; return s1>s2?1:2; }
+// a game is won when the winner reaches the target points (15/21) AND leads by 2 (deuce: play on past the target until a 2-point lead)
+function gameWin(g,pts){ const s1=+g.s1, s2=+g.s2; if(isNaN(s1)||isNaN(s2)||s1===s2) return 0; const hi=Math.max(s1,s2), lo=Math.min(s1,s2); if(hi < (pts||21) || hi-lo < 2) return 0; return s1>s2?1:2; }
 function gamesWon(m){ const pts=m.points||21; let a=0,b=0; gamesOf(m).forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else if(w===2)b++; }); return {a,b}; }
 function pointsOf(m){ let a=0,b=0; gamesOf(m).forEach(g=>{ a+=(+g.s1||0); b+=(+g.s2||0); }); return {a,b}; }
 function winnerOf(m){
@@ -1876,7 +1876,7 @@ function openScoreModal(id){
     <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="sErr"></div>
-      <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game</p>
+      <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game, win by 2</p>
       <div class="gamegrid">
         <span></span>
         <div class="glbl a">${esc(team(m.team1_p1,m.team1_p2))}</div>
@@ -1902,7 +1902,9 @@ function openScoreModal(id){
     for(let i=0;i<gs.length;i++){ const g=gs[i];
       if(isNaN(g.s1)||isNaN(g.s2)){ err.textContent='Fill both scores in each game you enter.'; err.classList.add('show'); return; }
       if(g.s1===g.s2){ err.textContent=`Game ${i+1} can't be tied — each game needs a winner.`; err.classList.add('show'); return; }
-      if(Math.max(g.s1,g.s2) < pts){ err.textContent=`Game ${i+1} isn't finished — a game is played to ${pts} points (the winner must reach ${pts}).`; err.classList.add('show'); return; } }
+      const hi=Math.max(g.s1,g.s2), lo=Math.min(g.s1,g.s2);
+      if(hi < pts){ err.textContent=`Game ${i+1} isn't finished — a game is played to ${pts} points (the winner must reach ${pts}).`; err.classList.add('show'); return; }
+      if(hi-lo < 2){ err.textContent=`Game ${i+1} isn't finished — at ${pts-1}–${pts-1} it's deuce; you must win by 2 (e.g. ${pts+1}–${pts-1}).`; err.classList.add('show'); return; } }
     let a=0,b=0; gs.forEach(g=>{ const w=gameWin(g,pts); if(w===1)a++; else b++; });
     if(Math.max(a,b)<need){ err.textContent='Best of '+bo+': a team needs to win '+need+' games. Enter the remaining game(s).'; err.classList.add('show'); return; }
     const commit=async()=>{ try{ await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Result saved'); }
