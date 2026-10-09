@@ -301,7 +301,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .team .chips{display:flex;margin-bottom:4px;min-width:0}
 .team.b .chips{justify-content:flex-end}
 /* match-row games */
-.matchrow{flex-wrap:wrap}
+.matchrow{flex-wrap:wrap;cursor:pointer}
+.matchrow:hover{border-color:var(--accent)}
 .gamedetail{order:5;flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding-top:9px;margin-top:4px;border-top:1px solid var(--border);font-variant-numeric:tabular-nums}
 .gamedetail .g{font-weight:800;color:var(--text2);font-size:12.5px}
 .gamedetail .fmt{margin-left:auto;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em;font-size:11px}
@@ -874,16 +875,16 @@ function renderMatches(el){
     try{ const data=await resizeImage(f,1600,0.85,false); const url=await store.saveImage(data,`tournament/${tt.id}/schedule.jpg`); await store.updateTournament(tt.id,{schedule_url:url}); await loadAll(); render(); openLightbox(url); toast('Schedule saved'); }
     catch(e){ toast(e.message||'Upload failed'); }
   });
-  el.querySelectorAll('[data-score]').forEach(b=>b.onclick=()=>openScoreModal(b.dataset.score));
-  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openMatchModal(b.dataset.edit));
-  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>confirmDelete('match',b.dataset.del));
+  el.querySelectorAll('.matchrow[data-id]').forEach(row=>row.onclick=(e)=>{ if(e.target.closest('.mactions')) return; openScoreModal(row.dataset.id); });
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); openMatchModal(b.dataset.edit); });
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); confirmDelete('match',b.dataset.del); });
 }
 function matchRow(m){
   const w=winnerOf(m); const done=m.status==='completed';
   const gw=gamesWon(m), gs=gamesOf(m);
   const ta=sideTeam(m,1), tb=sideTeam(m,2);
   const fmt=`Best of ${bestOf(m)} · ${m.points||21} pts`;
-  return `<div class="matchrow">
+  return `<div class="matchrow" data-id="${m.id}" title="Tap to ${done?'edit the':'record the'} score">
     <div class="mno"><b class="num">${pairNoFor(m)}</b><span>Match</span></div>
     <div class="teams">
       <div class="team a ${w===1?'win':''}">
@@ -902,9 +903,8 @@ function matchRow(m){
       </div>
     </div>
     <div class="mactions">
-      <button class="iconbtn" data-score="${m.id}" title="${done?'Edit score':'Record score'}" style="${done?'':'color:var(--accent-ink);background:var(--accent-bg);border-color:transparent'}">${done?I.edit:I.score}</button>
-      <button class="iconbtn" data-edit="${m.id}" title="Edit match">${I.users}</button>
-      <button class="iconbtn" data-del="${m.id}" title="Delete">${I.trash}</button>
+      <button class="iconbtn" data-edit="${m.id}" title="Edit match (teams, stage)">${I.edit}</button>
+      <button class="iconbtn" data-del="${m.id}" title="Delete match">${I.trash}</button>
     </div>
     <div class="gamedetail">${(done&&gs.length)?gs.map(g=>`<span class="g">${g.s1}–${g.s2}</span>`).join(''):''}<span class="fmt">${fmt}</span></div>
   </div>`;
@@ -1190,7 +1190,7 @@ function emptyState(h,p,icon){ return `<div class="empty">${icon}<h3>${esc(h)}</
    ================================================================ */
 const overlay=document.getElementById('modalOverlay'), modalEl=document.getElementById('modal');
 function openModal(html){ modalEl.innerHTML=html; overlay.classList.add('show'); document.body.style.overflow='hidden';
-  modalEl.querySelector('[data-close]')?.addEventListener('click',closeModal);
+  modalEl.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));
   const f=modalEl.querySelector('input,select'); if(f) setTimeout(()=>f.focus(),60);
 }
 function closeModal(){ overlay.classList.remove('show'); document.body.style.overflow=''; }
