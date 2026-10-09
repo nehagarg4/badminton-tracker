@@ -674,6 +674,15 @@ const store = {
     this._saveR(this._lsR().filter(r=>r.player!==name));
     this._saveTM(this._lsTM().map(t=>t.captain===name?{...t,captain:null}:t));
   },
+  // rename a player everywhere (DB FKs are ON UPDATE CASCADE: rosters, matches, captains follow)
+  async renamePlayer(oldName,newName){
+    if(useDB){ const {error}=await sb.from('players').update({name:newName}).eq('name',oldName); if(error)throw error;
+      await sb.from('matches').update({updated_by:newName}).eq('updated_by',oldName); return; }  // updated_by isn't a FK
+    const o=this._lsP(); if(o[oldName]){ o[newName]=Object.assign({},o[oldName],{name:newName}); delete o[oldName]; } this._saveP(o);
+    this._saveR(this._lsR().map(r=>r.player===oldName?{...r,player:newName}:r));
+    this._saveM(this._lsM().map(m=>{ const u={...m}; ['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{ if(u[k]===oldName)u[k]=newName; }); if(u.updated_by===oldName)u.updated_by=newName; return u; }));
+    this._saveTM(this._lsTM().map(t=>t.captain===oldName?{...t,captain:newName}:t));
+  },
   _lsTM(){ try{return JSON.parse(localStorage.getItem(LS_TM)||'[]')}catch(e){return []} },
   _saveTM(a){ try{localStorage.setItem(LS_TM,JSON.stringify(a))}catch(e){} },
   async getTeams(){
@@ -1132,7 +1141,7 @@ function renderPlayers(el){
   el.querySelectorAll('#scopeSeg button').forEach(b=>b.onclick=()=>{ state.scope=b.dataset.scope; render(); });
   el.querySelectorAll('tbody tr[data-player]').forEach(tr=>tr.onclick=()=>openPlayerDetail(tr.dataset.player, ms));
   el.querySelector('#addPlayerBtn')?.addEventListener('click',openAddPlayerModal);
-  el.querySelector('#teamsBtn')?.addEventListener('click',openTeamsModal);
+  el.querySelector('#teamsBtn')?.addEventListener('click',()=>{ state.tab='teams'; render(); });
   el.querySelector('#importBtn')?.addEventListener('click',openImportModal);
   el.querySelector('#csvBtn')?.addEventListener('click',()=>exportCSV(roster.filter(p=>p.played>0)));
 }
@@ -1606,7 +1615,7 @@ function openPlayerDetail(name, ms){
   const hist=stats.matches.slice().sort((a,b)=>(b.m.match_no||0)-(a.m.match_no||0));
   const hasPic=!!(state.players[name]&&state.players[name].avatar_url);
   openModal(`
-    <div class="modal-head"><h3>${esc(name)}</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-head"><h3>${esc(name)}</h3><button class="iconbtn" id="pdRename" title="Rename player" style="width:32px;height:32px;margin-left:8px">${I.edit}</button><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
         ${avatar(name,58)}
@@ -1634,6 +1643,7 @@ function openPlayerDetail(name, ms){
       <div class="modal-foot" style="margin-top:18px"><button class="btn danger" id="pdRemove" style="flex:none">${I.trash}Remove player</button></div>
     </div>`);
   modalEl.querySelector('#pdRemove').onclick=()=>removePlayerFlow(name);
+  modalEl.querySelector('#pdRename').onclick=()=>openRenamePlayer(name);
   modalEl.querySelector('#pdTeam').onchange=async(e)=>{
     const oldTeam=teamOf(name)||'', newTeam=e.target.value||'';
     if(oldTeam && oldTeam!==newTeam){
@@ -1659,6 +1669,31 @@ function openPlayerDetail(name, ms){
 function oppOf(m,name){
   const inA=[m.team1_p1,m.team1_p2].includes(name);
   return inA? [m.team2_p1,m.team2_p2] : [m.team1_p1,m.team1_p2];
+}
+function openRenamePlayer(oldName){
+  openModal(`<div class="modal-head"><h3>Rename player</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-body">
+      <div class="err" id="rnErr"></div>
+      <p class="subtle" style="font-size:13px;margin-bottom:12px">Updates this player everywhere — matches, team rosters, captain and history, across all tournaments.</p>
+      <div class="field"><label>Name</label><input id="rnName" value="${esc(oldName)}" maxlength="40" autocomplete="off"></div>
+      <div class="modal-foot"><button class="btn" data-close>Cancel</button><button class="btn primary" id="rnSave">Save</button></div>
+    </div>`);
+  const inp=modalEl.querySelector('#rnName'), err=modalEl.querySelector('#rnErr');
+  setTimeout(()=>{ inp.focus(); inp.select(); },60);
+  const save=async()=>{
+    const nn=inp.value.trim();
+    if(!nn){ err.textContent='Enter a name.'; err.classList.add('show'); return; }
+    if(nn===oldName){ closeModal(); return; }
+    if(Object.keys(state.players).some(n=>n.toLowerCase()===nn.toLowerCase() && n!==oldName)){ err.textContent='A player with that name already exists.'; err.classList.add('show'); return; }
+    const btn=modalEl.querySelector('#rnSave'); btn.disabled=true; btn.textContent='Saving…';
+    try{
+      await store.renamePlayer(oldName,nn);
+      if(getUser()===oldName){ setUser(nn); renderUserPill(); }
+      await loadAll(); render(); openPlayerDetail(nn, scopedMatches()); toast('Player renamed');
+    }catch(e){ err.textContent='Could not rename: '+(e.message||e); err.classList.add('show'); btn.disabled=false; btn.textContent='Save'; }
+  };
+  modalEl.querySelector('#rnSave').onclick=save;
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
 }
 
 function removePlayerFlow(name){
