@@ -435,6 +435,14 @@ const store = {
     if(useDB){ const {error}=await sb.from('players').upsert({name,avatar_url:url},{onConflict:'name'}); if(error)throw error; return; }
     const o=this._lsP(); o[name]={name,avatar_url:url}; if(!this._saveP(o)) throw new Error('Image too large for on-device mode. Connect Supabase to store photos.');
   },
+  async addPlayer(name){
+    if(useDB){ const {error}=await sb.from('players').upsert({name},{onConflict:'name',ignoreDuplicates:true}); if(error)throw error; return; }
+    const o=this._lsP(); if(!o[name]) o[name]={name,avatar_url:null}; this._saveP(o);
+  },
+  async removePlayer(name){
+    if(useDB){ const {error}=await sb.from('players').delete().eq('name',name); if(error)throw error; return; }
+    const o=this._lsP(); delete o[name]; this._saveP(o);
+  },
   // Returns the URL to persist. Supabase: uploads to Storage and returns a public URL. On-device: returns the data URL itself.
   async saveImage(dataUrl,path){
     if(useDB){ const blob=await (await fetch(dataUrl)).blob(); const {error}=await sb.storage.from('images').upload(path,blob,{upsert:true,contentType:'image/jpeg'}); if(error)throw error; return sb.storage.from('images').getPublicUrl(path).data.publicUrl+'?v='+Date.now(); }
@@ -484,8 +492,21 @@ function computeStats(matches){
 function allPlayerNames(){
   const s=new Set();
   state.matches.forEach(m=>['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{ if(m[k]) s.add(m[k]); }));
+  Object.keys(state.players).forEach(n=>s.add(n));
   return [...s].sort((a,b)=>a.localeCompare(b));
 }
+// Full roster for a set of matches: everyone who appears in them, plus every
+// player added to the roster directly (players table). Shown even with 0 games.
+function rosterNames(ms){
+  const s=new Set();
+  ms.forEach(m=>['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{ if(m[k]) s.add(m[k]); }));
+  Object.keys(state.players).forEach(n=>s.add(n));
+  return [...s];
+}
+function matchCountFor(name){
+  return state.matches.filter(m=>[m.team1_p1,m.team1_p2,m.team2_p1,m.team2_p2].includes(name)).length;
+}
+const zeroStats = name => ({ name, played:0, won:0, lost:0, pf:0, pa:0, diff:0, pct:0, partners:{}, matches:[] });
 
 /* ================================================================
    ICONS
@@ -533,7 +554,7 @@ function renderDashboard(el){
   const done=ms.filter(m=>m.status==='completed');
   const stats=computeStats(ms);
   const leader=stats[0];
-  const players=allPlayersInMatches(ms);
+  const players=rosterNames(ms);
   const recent=done.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')||b.match_no-a.match_no).slice(0,5);
 
   el.innerHTML = `
@@ -644,7 +665,12 @@ function matchRow(m){
 /* ---- Players ---- */
 function renderPlayers(el){
   const ms=scopedMatches();
-  const stats=computeStats(ms);
+  const sMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
+  // Full roster: everyone in the (scoped) matches + anyone added directly.
+  const roster=rosterNames(ms).map(n=>sMap[n]||zeroStats(n));
+  roster.sort((a,b)=> b.won-a.won || b.pct-a.pct || b.played-a.played || b.diff-a.diff || a.name.localeCompare(b.name));
+  const played=roster.filter(p=>p.played>0).length;
+
   el.innerHTML = `
     <div class="sectionhead"><h2>Players</h2><div class="spacer"></div>
       <div class="scope-seg" id="scopeSeg">
@@ -652,30 +678,58 @@ function renderPlayers(el){
         <button data-scope="all" class="${state.scope==='all'?'on':''}">All time</button>
       </div>
     </div>
-    ${stats.length? `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn sm ghost" id="csvBtn">${I.download}Export CSV</button></div>
+    ${roster.length? `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <span class="subtle">${roster.length} player${roster.length!==1?'s':''}${played?` · ${played} with results`:''}</span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn sm" id="addPlayerBtn">${I.plus}Add player</button>
+      <button class="btn sm ghost" id="csvBtn">${I.download}Export CSV</button>
+    </div>
     <div class="tablewrap"><table>
       <thead><tr>
         <th>#&nbsp;&nbsp;Player</th><th class="n">P</th><th class="n">W</th><th class="n">L</th>
         <th>Win %</th><th class="n">Pts&nbsp;For</th><th class="n">Pts&nbsp;Ag</th><th class="n">Diff</th>
       </tr></thead>
-      <tbody>${stats.map((p,i)=>`
+      <tbody>${roster.map((p,i)=>{const none=p.played===0;return `
         <tr data-player="${esc(p.name)}">
-          <td><div class="rankcell"><span class="rankno ${i===0?'top':''}">${i+1}</span>${avatar(p.name,30)}<span class="pname">${esc(p.name)}</span></div></td>
+          <td><div class="rankcell"><span class="rankno ${i===0&&!none?'top':''}">${none?'·':i+1}</span>${avatar(p.name,30)}<span class="pname">${esc(p.name)}</span></div></td>
           <td class="n num">${p.played}</td>
-          <td class="n num" style="color:var(--win);font-weight:800">${p.won}</td>
-          <td class="n num" style="color:var(--danger)">${p.lost}</td>
-          <td><span class="num" style="font-weight:800">${Math.round(p.pct*100)}%</span><span class="pctbar"><i style="width:${Math.round(p.pct*100)}%"></i></span></td>
+          <td class="n num" style="color:${p.won?'var(--win)':'var(--muted)'};font-weight:800">${p.won}</td>
+          <td class="n num" style="color:${p.lost?'var(--danger)':'var(--muted)'}">${p.lost}</td>
+          <td>${none?'<span class="subtle">—</span>':`<span class="num" style="font-weight:800">${Math.round(p.pct*100)}%</span><span class="pctbar"><i style="width:${Math.round(p.pct*100)}%"></i></span>`}</td>
           <td class="n num">${p.pf}</td><td class="n num">${p.pa}</td>
-          <td class="n"><span class="pill diff ${p.diff>0?'pos':p.diff<0?'neg':''}">${p.diff>0?'+':''}${p.diff}</span></td>
-        </tr>`).join('')}</tbody>
+          <td class="n">${none?'':`<span class="pill diff ${p.diff>0?'pos':p.diff<0?'neg':''}">${p.diff>0?'+':''}${p.diff}</span>`}</td>
+        </tr>`;}).join('')}</tbody>
     </table></div>
-    <p class="subtle" style="margin-top:12px">Tap a player for partners & match history. P=played, W=won, L=lost, Diff=points for − against.</p>`
-    : emptyState('No stats yet','Standings appear once match scores are recorded.',I.users)}`;
+    <p class="subtle" style="margin-top:12px">Tap a player to see partners, match history, upload a photo, or remove them. P=played, W=won, L=lost, Diff=points for − against.</p>`
+    : emptyState('No players yet','Add players here, or add a match on the Matches tab.',I.users)}`;
 
   el.querySelectorAll('#scopeSeg button').forEach(b=>b.onclick=()=>{ state.scope=b.dataset.scope; render(); });
   el.querySelectorAll('tbody tr').forEach(tr=>tr.onclick=()=>openPlayerDetail(tr.dataset.player, ms));
-  el.querySelector('#csvBtn')?.addEventListener('click',()=>exportCSV(stats));
+  el.querySelector('#addPlayerBtn')?.addEventListener('click',openAddPlayerModal);
+  el.querySelector('#csvBtn')?.addEventListener('click',()=>exportCSV(roster.filter(p=>p.played>0)));
+}
+
+function openAddPlayerModal(){
+  openModal(`
+    <div class="modal-head"><h3>Add player</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-body">
+      <div class="err" id="apErr"></div>
+      <div class="field"><label>Player name</label><input id="apName" placeholder="e.g. Rahul" autocomplete="off"></div>
+      <div class="hint" style="margin-top:-6px;margin-bottom:12px">Adds them to the roster so you can set a photo and pick them when adding matches.</div>
+      <div class="modal-foot">
+        <button class="btn" data-close>Cancel</button>
+        <button class="btn primary" id="apSave">${I.plus}Add player</button>
+      </div>
+    </div>`);
+  modalEl.querySelector('#apSave').onclick=async()=>{
+    const name=modalEl.querySelector('#apName').value.trim();
+    const err=modalEl.querySelector('#apErr');
+    if(!name){ err.textContent='Enter a name.'; err.classList.add('show'); return; }
+    if(rosterNames(state.matches).some(n=>n.toLowerCase()===name.toLowerCase())){ err.textContent='That player is already in the roster.'; err.classList.add('show'); return; }
+    try{ await store.addPlayer(name); closeModal(); await loadAll(); render(); toast('Player added'); }
+    catch(e){ err.textContent='Could not add: '+(e.message||e); err.classList.add('show'); }
+  };
 }
 
 /* ---- Tournaments ---- */
@@ -907,7 +961,10 @@ function openPlayerDetail(name, ms){
         <span style="min-width:0">#${h.m.match_no} ${h.partner?'with '+esc(h.partner):''} <span style="color:var(--muted)">vs ${esc(h.won? team(oppOf(h.m,name)[0],oppOf(h.m,name)[1]) : team(oppOf(h.m,name)[0],oppOf(h.m,name)[1]))}</span></span>
         <span class="mscore">${h.mine}–${h.theirs}</span>
       </li>`).join('')}</ul>
+      ${hist.length?'':'<p class="subtle" style="margin-top:4px">No matches yet.</p>'}
+      <div class="modal-foot" style="margin-top:18px"><button class="btn danger" id="pdRemove" style="flex:none">${I.trash}Remove player</button></div>
     </div>`);
+  modalEl.querySelector('#pdRemove').onclick=()=>removePlayerFlow(name);
   modalEl.querySelector('#pdPhoto').onclick=async()=>{
     const f=await pickImage(); if(!f) return;
     const btn=modalEl.querySelector('#pdPhoto'); btn.textContent='Uploading…'; btn.disabled=true;
@@ -925,6 +982,26 @@ function openPlayerDetail(name, ms){
 function oppOf(m,name){
   const inA=[m.team1_p1,m.team1_p2].includes(name);
   return inA? [m.team2_p1,m.team2_p2] : [m.team1_p1,m.team1_p2];
+}
+
+function removePlayerFlow(name){
+  const mc=matchCountFor(name);
+  openModal(`
+    <div class="modal-head"><h3>Remove ${esc(name)}?</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-body">
+      <p class="subtle" style="font-size:14px;margin-bottom:12px">
+        ${mc? `${esc(name)} is in <b style="color:var(--text)">${mc} match${mc!==1?'es':''}</b>. Removing clears their profile photo and roster entry, but they'll keep appearing while they're in those matches — edit or delete those matches on the <b style="color:var(--text)">Matches</b> tab to remove them fully.`
+            : `Remove <b style="color:var(--text)">${esc(name)}</b> from the roster? This also clears their profile photo.`}
+      </p>
+      <div class="modal-foot">
+        <button class="btn" data-close>Cancel</button>
+        <button class="btn primary" style="background:var(--danger)" id="rpYes">${I.trash}Remove</button>
+      </div>
+    </div>`);
+  modalEl.querySelector('#rpYes').onclick=async()=>{
+    try{ await store.removePlayer(name); closeModal(); await loadAll(); render(); toast('Player removed'); }
+    catch(e){ toast('Could not remove'); }
+  };
 }
 
 /* ================================================================
