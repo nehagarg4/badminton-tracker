@@ -647,10 +647,10 @@ function sideTeam(m, side){
   return ts.length===1 ? ts[0] : null;
 }
 function fixtureKey(m){ const a=sideTeam(m,1), b=sideTeam(m,2); return (a&&b) ? [a,b].sort().join(' ~|~ ') : '~other~'; }
-// sequential number within the match's fixture (1,2,3…) so each fixture reads in order
+// sequential number within the match's stage (1,2,3…) so matches read in order
 function pairNoFor(m){
-  const st=m.stage||'League', fk=fixtureKey(m);
-  const peers=state.matches.filter(x=>x.tournament_id===m.tournament_id && (x.stage||'League')===st && fixtureKey(x)===fk)
+  const st=m.stage||'League';
+  const peers=state.matches.filter(x=>x.tournament_id===m.tournament_id && (x.stage||'League')===st)
     .sort((a,b)=>(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
   const i=peers.findIndex(x=>x.id===m.id);
   return i>=0 ? i+1 : (m.match_no||'');
@@ -837,27 +837,11 @@ function renderMatches(el){
       <button class="btn primary sm" id="addMatchBtn">${I.plus}Add match</button>
     </div>
     ${ms.length? stages.map(stage=>{
-      const sm=byStage[stage];
-      const byFix={}; sm.forEach(m=>{ const k=fixtureKey(m); (byFix[k]=byFix[k]||[]).push(m); });
-      const fixKeys=Object.keys(byFix).sort((a,b)=>(a==='~other~')-(b==='~other~')||a.localeCompare(b));
+      const sm=byStage[stage].slice().sort((a,b)=>(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
       const stKey='st:'+stage; const stOpen=!matchCollapsed.has(stKey);
       return `<div class="stageblock">
         <button class="stagehead ${stOpen?'':'collapsed'}" data-mc="${esc(stKey)}"><span class="chev">${I.chevron}</span><span class="stagebadge">${esc(stage)}</span><div class="line"></div><span class="count num">${sm.filter(m=>m.status==='completed').length}/${sm.length}</span></button>
-        <div class="stagefixtures" ${stOpen?'':'hidden'}>
-        ${fixKeys.map(fk=>{
-          const fm=byFix[fk].slice().sort((a,b)=>(a.match_no||0)-(b.match_no||0));
-          const a=sideTeam(fm[0],1), b=sideTeam(fm[0],2);
-          let wa=0,wb=0; fm.forEach(m=>{ const w=winnerOf(m); if(!w) return; const wt=w===1?sideTeam(m,1):sideTeam(m,2); if(wt===a)wa++; else if(wt===b)wb++; });
-          const head=(a&&b)
-            ? `<div class="fixteams">${teamChip(a)}<span class="num fixsc ${wa>wb?'lead':''}">${wa}</span><span class="vs">–</span><span class="num fixsc ${wb>wa?'lead':''}">${wb}</span>${teamChip(b)}</div>`
-            : `<span class="subtle" style="font-weight:700">Unassigned matches</span>`;
-          const fxKey='fx:'+stage+'::'+fk; const fxOpen=!matchCollapsed.has(fxKey);
-          return `<div class="fixblock">
-            <button class="fixhead ${fxOpen?'':'collapsed'}" data-mc="${esc(fxKey)}"><span class="chev">${I.chevron}</span>${head}<div class="line2"></div><span class="count2 num">${fm.filter(m=>m.status==='completed').length}/${fm.length}</span></button>
-            <div class="fixmatches" ${fxOpen?'':'hidden'}>${fm.map(matchRow).join('')}</div>
-          </div>`;
-        }).join('')}
-        </div>
+        <div class="stagefixtures" ${stOpen?'':'hidden'}>${sm.map(matchRow).join('')}</div>
       </div>`;
     }).join('')
     : emptyState('No matches yet','Add the first match of this tournament.',I.score)}`;
@@ -885,6 +869,7 @@ function matchRow(m){
     <div class="mno"><b class="num">${pairNoFor(m)}</b><span>Match</span></div>
     <div class="teams">
       <div class="team a ${w===1?'win':''}">
+        <div class="chips">${ta?teamChip(ta):'<span class="tag">Team A</span>'}</div>
         <div class="players">${playersAv(m.team1_p1,m.team1_p2)}</div>
         ${w===1?`<span class="wlabel">${I.check}Won</span>`:''}
       </div>
@@ -893,6 +878,7 @@ function matchRow(m){
               :`<span class="pending">vs</span>`}
       </div>
       <div class="team b ${w===2?'win':''}">
+        <div class="chips" style="justify-content:flex-end">${tb?teamChip(tb):'<span class="tag">Team B</span>'}</div>
         <div class="players">${playersAv(m.team2_p1,m.team2_p2)}</div>
         ${w===2?`<span class="wlabel" style="justify-content:flex-end">${I.check}Won</span>`:''}
       </div>
