@@ -1102,7 +1102,7 @@ function renderAdmin(el){
       ${roleLines.join('')}
     </div>
     ${isSuper()?`<div class="set-card"><h2>Manage access <span class="captag">Super</span></h2><div id="adMgr"><p class="subtle">Loading…</p></div></div>`:''}
-    ${(!isSuper()&&(isGlobalAdmin()||adminTids().length))?`<div class="set-card"><h2>Umpires</h2><div class="d" style="font-size:13px;color:var(--text2);margin-bottom:10px">Add people who can record scores for your tournament.</div><div id="adUmp"><p class="subtle">Loading…</p></div></div>`:''}
+    ${(!isSuper()&&(isGlobalAdmin()||adminTids().length))?`<div class="set-card"><h2>Manage admins &amp; umpires</h2><div class="d" style="font-size:13px;color:var(--text2)">Open <b>Tournaments</b>, edit a tournament you manage, and set its admins &amp; umpires there.</div></div>`:''}
     ${canReset?`<div class="set-card danger"><h2>Danger zone</h2>
       <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
     </div>`:''}
@@ -1112,7 +1112,6 @@ function renderAdmin(el){
   el.querySelector('#adLogout').onclick=()=>{ store._audit('logout',{username:session.username}); adminLogout(); };
   el.querySelector('#adReset')?.addEventListener('click',async()=>{ const t=curTournament(); if(!t) return; if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Cannot be undone.`)) return; try{ for(const m of tournamentMatches()) await store.updateMatch(m.id,{games:[],score1:null,score2:null,status:'scheduled'}); await loadAll(); toast('Scores reset'); renderAdmin(el); }catch(e){ toast('Could not reset'); } });
   if(isSuper()) renderAccessMgr(el.querySelector('#adMgr'));
-  else if(isGlobalAdmin()||adminTids().length) renderUmpireMgr(el.querySelector('#adUmp'));
   if(isSuper()) (async()=>{ const box=el.querySelector('#adLog'); if(!box) return; try{ const {data,error}=await sb.rpc('app_audit',{su:session.username,sp:session.pw,lim:150});
     if(error||!data||!data.ok){ box.innerHTML=`<p class="subtle">Could not load the log${error?' ('+esc(error.message)+')':''}. Run the latest migration (migrate13.sql).</p>`; return; }
     const rows=data.rows||[];
@@ -1126,15 +1125,13 @@ async function renderAccessMgr(box){
   const players=Object.keys(state.players).sort((a,b)=>a.localeCompare(b));
   const tours=(state.tournaments||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const tName=tid=>{ const t=tours.find(x=>x.id===tid); return t?t.name:'(tournament)'; };
-  const tourOpts=tours.length?tours.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''):'<option value="">— no tournaments —</option>';
   const ps='padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)';
-  const rmx=(cls,u,t)=>`<button class="${cls}" data-u="${esc(u)}" data-t="${esc(t)}" title="Remove" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-weight:800;line-height:1">×</button>`;
-  const chip=(label,inner)=>`<span class="tmstage" style="display:inline-flex;align-items:center;gap:6px">${esc(label)}${inner||''}</span>`;
+  const chip=label=>`<span class="tmstage">${esc(label)}</span>`;
   const grp=(lbl,chips)=> chips.length?`<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center"><span class="subtle" style="font-size:11px">${lbl}</span> ${chips.join(' ')}</div>`:'';
   const rowHtml=u=>{
-    const adm=(u.admin_of||[]).map(tid=>chip(tName(tid),rmx('uAdmRm',u.username,tid)));
+    const adm=(u.admin_of||[]).map(tid=>chip(tName(tid)));
     const cap=(u.captain_of||[]).map(tid=>chip(tName(tid)+' ⚑'));
-    const ump=(u.umpire_of||[]).map(tid=>chip(tName(tid),rmx('uUmpRm',u.username,tid)));
+    const ump=(u.umpire_of||[]).map(tid=>chip(tName(tid)));
     return `<div class="set-row" style="padding:8px 0;border-bottom:1px solid var(--border);align-items:flex-start">
       <div class="sr-main" style="display:flex;align-items:flex-start;gap:10px">${avatar(u.username,30)}<div style="min-width:0"><div class="t">${esc(u.username)}${u.is_super?' <span class="captag">super</span>':''}${(u.is_admin&&!u.is_super)?' <span class="captag">admin · all</span>':''}</div>
         ${grp('admin:',adm)}${grp('captain⇒admin:',cap)}${grp('umpire:',ump)}
@@ -1144,24 +1141,8 @@ async function renderAccessMgr(box){
   };
   box.innerHTML=`
     <div id="usersBox">${users.length?users.map(rowHtml).join(''):'<p class="subtle">No users yet.</p>'}</div>
-
-    <div class="hint" style="margin:14px 0 8px">Add an <b>admin</b> for a tournament (full edit of that tournament). Team captains are admins of their tournament automatically.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <select id="aName" style="flex:1;min-width:130px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
-      <input id="aPass" type="text" placeholder="password" style="flex:1;min-width:110px;${ps}">
-      <select id="aT" style="flex:1;min-width:130px">${tourOpts}</select>
-      <button class="btn sm primary" id="aSave" style="flex:none">Add admin</button>
-    </div>
-
-    <div class="hint" style="margin:16px 0 8px">Add an <b>umpire</b> for a tournament (scores only).</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <select id="umpName" style="flex:1;min-width:130px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
-      <input id="umpPass" type="text" placeholder="password" style="flex:1;min-width:110px;${ps}">
-      <select id="umpT" style="flex:1;min-width:130px">${tourOpts}</select>
-      <button class="btn sm primary" id="umpSave" style="flex:none">Add umpire</button>
-    </div>
-
-    <div class="hint" style="margin:16px 0 8px">Make a <b>global admin</b> (edit &amp; score every tournament) or a <b>super-admin</b> (also manage access + activity log + create/delete tournaments), or just create a login. Blank password on an existing user only toggles the checkboxes.</div>
+    <div class="hint" style="margin:14px 0 8px">Per-tournament <b>admins</b> and <b>umpires</b> are managed on each tournament's edit screen (<b>Tournaments → edit</b>). Captains are admins of their tournament automatically. Below you set <b>global</b> roles only.</div>
+    <div class="hint" style="margin:0 0 8px">Make a <b>global admin</b> (edit &amp; score every tournament) or a <b>super-admin</b> (also manage access + activity log + create/delete tournaments), or just create a login. Blank password on an existing user only toggles the checkboxes.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="sName" style="flex:1;min-width:130px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
       <input id="sPass" type="text" placeholder="password" style="flex:1;min-width:110px;${ps}">
@@ -1169,44 +1150,48 @@ async function renderAccessMgr(box){
       <label class="subtle" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="sSuper"> super</label>
       <button class="btn sm primary" id="sSave" style="flex:none">Save</button>
     </div>`;
-  const rpc=async(fn,args,okMsg,action,detail)=>{ try{ const {data}=await sb.rpc(fn,args); if(data&&data.ok){ if(action) store._audit(action,detail); renderAccessMgr(box); toast(okMsg); return; } toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
-  box.querySelectorAll('.uRm').forEach(b=>b.onclick=()=>{ if(!confirm(`Remove ${b.dataset.u}? This removes all their access.`)) return; rpc('app_remove_user',{su:session.username,sp:session.pw,target:b.dataset.u},'Removed','admin.remove',{username:b.dataset.u}); });
-  box.querySelectorAll('.uAdmRm').forEach(b=>b.onclick=()=> rpc('app_set_admin',{su:session.username,sp:session.pw,target:b.dataset.u,pass:'',tid:b.dataset.t,on_flag:false},'Admin removed','admin.unset',{username:b.dataset.u,tournament:b.dataset.t}));
-  box.querySelectorAll('.uUmpRm').forEach(b=>b.onclick=()=> rpc('app_set_umpire',{su:session.username,sp:session.pw,target:b.dataset.u,pass:'',tid:b.dataset.t,on_flag:false},'Umpire removed','umpire.remove',{username:b.dataset.u,tournament:b.dataset.t}));
-  box.querySelector('#aSave').onclick=()=>{ const name=box.querySelector('#aName').value, pass=box.querySelector('#aPass').value||'', tid=box.querySelector('#aT').value;
-    if(!name){ toast('Pick a name'); return; } if(!tid){ toast('Pick a tournament'); return; }
-    rpc('app_set_admin',{su:session.username,sp:session.pw,target:name,pass:pass,tid:tid,on_flag:true},'Admin added','admin.set',{username:name,tournament:tid}); };
-  box.querySelector('#umpSave').onclick=()=>{ const name=box.querySelector('#umpName').value, pass=box.querySelector('#umpPass').value||'', tid=box.querySelector('#umpT').value;
-    if(!name){ toast('Pick a name'); return; } if(!tid){ toast('Pick a tournament'); return; }
-    rpc('app_set_umpire',{su:session.username,sp:session.pw,target:name,pass:pass,tid:tid,on_flag:true},'Umpire added','umpire.set',{username:name,tournament:tid}); };
-  box.querySelector('#sSave').onclick=()=>{ const name=box.querySelector('#sName').value, pass=box.querySelector('#sPass').value||'', adm=box.querySelector('#sAdmin').checked, sup=box.querySelector('#sSuper').checked;
+  box.querySelectorAll('.uRm').forEach(b=>b.onclick=async()=>{ if(!confirm(`Remove ${b.dataset.u}? This removes all their access.`)) return;
+    try{ const {data}=await sb.rpc('app_remove_user',{su:session.username,sp:session.pw,target:b.dataset.u}); if(data&&data.ok){ store._audit('admin.remove',{username:b.dataset.u}); renderAccessMgr(box); toast('Removed'); } else toast('Could not remove'); }catch(e){ toast('Could not remove'); } });
+  box.querySelector('#sSave').onclick=async()=>{ const name=box.querySelector('#sName').value, pass=box.querySelector('#sPass').value||'', adm=box.querySelector('#sAdmin').checked, sup=box.querySelector('#sSuper').checked;
     if(!name){ toast('Pick a name'); return; }
-    rpc('app_set_user',{su:session.username,sp:session.pw,target:name,pass:pass,admin:adm,super:sup},'Saved','super.set',{username:name,admin:adm,super:sup}); };
+    try{ const {data}=await sb.rpc('app_set_user',{su:session.username,sp:session.pw,target:name,pass:pass,admin:adm,super:sup}); if(data&&data.ok){ store._audit('super.set',{username:name,admin:adm,super:sup}); renderAccessMgr(box); toast('Saved'); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
 }
-async function renderUmpireMgr(box){
+// Per-tournament admins + umpires, shown inside the tournament edit modal. Changes apply immediately.
+async function renderTournamentPeople(tid, box){
   if(!box) return;
-  const mine=(isGlobalAdmin()?(state.tournaments||[]):adminTids().map(tid=>(state.tournaments||[]).find(t=>t.id===tid)).filter(Boolean)).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-  if(!mine.length){ box.innerHTML='<p class="subtle">No tournaments to manage.</p>'; return; }
+  if(!useDB||!sb){ box.innerHTML='<p class="subtle">Available on the live site.</p>'; return; }
+  const su=session?session.username:'', sp=session?session.pw:'';
   const players=Object.keys(state.players).sort((a,b)=>a.localeCompare(b));
-  const ps='padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)';
+  const ps='padding:9px 11px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)';
+  let explicit=[], captains=[], umps=[];
+  try{ const {data}=await sb.rpc('app_list_admins',{su,sp,tid}); if(data&&data.ok){ explicit=data.explicit||[]; captains=data.captains||[]; } }catch(e){}
+  try{ const {data}=await sb.rpc('app_list_umpires',{su,sp,tid}); if(data&&data.ok) umps=data.umpires||[]; }catch(e){}
+  const capLc=captains.map(c=>c.toLowerCase());
+  const row=(n,badge,rmCls)=>`<div class="set-row" style="padding:6px 0;border-bottom:1px solid var(--border)"><div class="sr-main" style="display:flex;align-items:center;gap:8px">${avatar(n,26)}<span class="t">${esc(n)}</span>${badge||''}</div>${rmCls?`<button class="btn sm ghost danger ${rmCls}" data-u="${esc(n)}" style="flex:none">Remove</button>`:'<span class="subtle" style="font-size:11px">auto</span>'}</div>`;
+  const admRows = captains.map(n=>row(n,'<span class="captag">captain</span>',null)).join('')
+    + explicit.filter(n=>!capLc.includes(n.toLowerCase())).map(n=>row(n,'','tpAdmRm')).join('');
   box.innerHTML=`
-    <div class="field"><label>Tournament</label><select id="umMgrT">${mine.map(t=>`<option value="${esc(t.id)}" ${t.id===state.tournamentId?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>
-    <div id="umList" style="margin-top:8px"><p class="subtle">Loading…</p></div>
-    <div class="hint" style="margin:12px 0 8px">Add an umpire (scores only, this tournament) — pick a player and set a password.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <select id="umAddName" style="flex:1;min-width:140px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
-      <input id="umAddPass" type="text" placeholder="password" style="flex:1;min-width:110px;${ps}">
-      <button class="btn sm primary" id="umAdd" style="flex:none">Add umpire</button>
+    <div style="font-size:11.5px;font-weight:800;letter-spacing:.04em;color:var(--text2);margin:2px 0 4px">ADMINS <span class="subtle" style="font-weight:600;letter-spacing:0">· full edit of this tournament</span></div>
+    <div id="tpAdm">${admRows||'<p class="subtle">No admins yet.</p>'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <select id="tpAdmName" style="flex:1;min-width:120px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+      <input id="tpAdmPass" type="text" placeholder="password" style="flex:1;min-width:100px;${ps}">
+      <button class="btn sm primary" id="tpAdmAdd" style="flex:none">Add admin</button>
+    </div>
+    <div style="font-size:11.5px;font-weight:800;letter-spacing:.04em;color:var(--text2);margin:14px 0 4px">UMPIRES <span class="subtle" style="font-weight:600;letter-spacing:0">· record scores only</span></div>
+    <div id="tpUmp">${umps.length?umps.map(n=>row(n,'','tpUmpRm')).join(''):'<p class="subtle">No umpires yet.</p>'}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
+      <select id="tpUmpName" style="flex:1;min-width:120px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+      <input id="tpUmpPass" type="text" placeholder="password" style="flex:1;min-width:100px;${ps}">
+      <button class="btn sm primary" id="tpUmpAdd" style="flex:none">Add umpire</button>
     </div>`;
-  const tsel=box.querySelector('#umMgrT');
-  const load=async()=>{ const tid=tsel.value; const lst=box.querySelector('#umList');
-    let ums=[]; try{ const {data}=await sb.rpc('app_list_umpires',{su:session.username,sp:session.pw,tid}); if(data&&data.ok) ums=data.umpires||[]; }catch(e){}
-    lst.innerHTML= ums.length? ums.map(n=>`<div class="set-row" style="padding:6px 0;border-bottom:1px solid var(--border)"><div class="sr-main" style="display:flex;align-items:center;gap:8px">${avatar(n,26)}<span class="t">${esc(n)}</span></div><button class="btn sm ghost danger umRm" data-u="${esc(n)}" style="flex:none">Remove</button></div>`).join('') : '<p class="subtle">No umpires yet for this tournament.</p>';
-    lst.querySelectorAll('.umRm').forEach(b=>b.onclick=async()=>{ try{ const {data}=await sb.rpc('app_set_umpire',{su:session.username,sp:session.pw,target:b.dataset.u,pass:'',tid,on_flag:false}); if(data&&data.ok){ store._audit('umpire.remove',{username:b.dataset.u,tournament:tid}); load(); toast('Removed'); } else toast((data&&data.err)||'Could not remove'); }catch(e){ toast('Could not remove'); } }); };
-  tsel.onchange=load; load();
-  box.querySelector('#umAdd').onclick=async()=>{ const name=box.querySelector('#umAddName').value, pass=box.querySelector('#umAddPass').value||'', tid=tsel.value;
-    if(!name){ toast('Pick a name'); return; }
-    try{ const {data}=await sb.rpc('app_set_umpire',{su:session.username,sp:session.pw,target:name,pass:pass,tid,on_flag:true}); if(data&&data.ok){ store._audit('umpire.set',{username:name,tournament:tid}); box.querySelector('#umAddPass').value=''; load(); toast('Umpire added'); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
+  const call=async(fn,args,okMsg,action,detail)=>{ try{ const {data}=await sb.rpc(fn,args); if(data&&data.ok){ if(action) store._audit(action,detail); renderTournamentPeople(tid,box); toast(okMsg); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
+  box.querySelectorAll('.tpAdmRm').forEach(b=>b.onclick=()=> call('app_set_admin',{su,sp,target:b.dataset.u,pass:'',tid,on_flag:false},'Admin removed','admin.unset',{username:b.dataset.u,tournament:tid}));
+  box.querySelectorAll('.tpUmpRm').forEach(b=>b.onclick=()=> call('app_set_umpire',{su,sp,target:b.dataset.u,pass:'',tid,on_flag:false},'Umpire removed','umpire.remove',{username:b.dataset.u,tournament:tid}));
+  box.querySelector('#tpAdmAdd').onclick=()=>{ const name=box.querySelector('#tpAdmName').value, pass=box.querySelector('#tpAdmPass').value||''; if(!name){ toast('Pick a name'); return; }
+    call('app_set_admin',{su,sp,target:name,pass,tid,on_flag:true},'Admin added','admin.set',{username:name,tournament:tid}); };
+  box.querySelector('#tpUmpAdd').onclick=()=>{ const name=box.querySelector('#tpUmpName').value, pass=box.querySelector('#tpUmpPass').value||''; if(!name){ toast('Pick a name'); return; }
+    call('app_set_umpire',{su,sp,target:name,pass,tid,on_flag:true},'Umpire added','umpire.set',{username:name,tournament:tid}); };
 }
 
 /* ---- Settings ---- */
@@ -1955,6 +1940,11 @@ function openTournamentModal(id){
         <button type="button" class="btn sm" id="addStageBtn" style="margin-top:8px">${I.plus}Add stage</button>
         <div class="hint">Each stage sets its match format (best-of + points); matches inherit it. Renaming a stage updates its matches; a stage that has matches can't be deleted. Saving also updates scheduled matches to the stage format.</div>
       </div>
+      ${t&&isAdminFor(id)?`<div class="field" style="border-top:1px solid var(--border);padding-top:14px">
+        <label>Admins &amp; umpires</label>
+        <div class="hint" style="margin-bottom:8px">Who can manage this tournament. Changes here apply immediately (independent of the button below). Team captains are admins automatically.</div>
+        <div id="tPeople"><p class="subtle">Loading…</p></div>
+      </div>`:''}
       <div class="modal-foot">
         <button class="btn" data-close>Cancel</button>
         <button class="btn primary" id="saveT">${t?'Save':'Create'}</button>
@@ -1976,6 +1966,7 @@ function openTournamentModal(id){
     };
   }
   modalEl.querySelectorAll('#stageList .sfrow').forEach(wireStageRow);
+  if(t&&isAdminFor(id)) renderTournamentPeople(id, modalEl.querySelector('#tPeople'));
   modalEl.querySelector('#addStageBtn').onclick=()=>{
     const list=modalEl.querySelector('#stageList');
     const div=document.createElement('div'); div.className='sfrow';
