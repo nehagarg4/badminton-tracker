@@ -481,6 +481,7 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
   <button class="tab" data-tab="teams"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Teams</button>
   <button class="tab" data-tab="tournaments"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>Tournaments</button>
   <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Settings</button>
+  <button class="tab" data-tab="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>Admin</button>
 </nav>
 
 <main class="wrap">
@@ -1014,9 +1015,11 @@ function renderHeader(){
 const isAdminRoute=()=> location.hash==='#admin' || /\/admin\/?$/.test(location.pathname);
 function render(){
   renderHeader(); renderUserPill();
-  const asc=document.getElementById('adminScreen'), main=document.querySelector('main.wrap'), tabs=document.getElementById('tabs');
-  if(isAdminRoute()){ tabs.style.display='none'; main.style.display='none'; asc.style.display='block'; renderAdmin(asc); return; }
-  tabs.style.display=''; main.style.display=''; asc.style.display='none';
+  const asc=document.getElementById('adminScreen'), main=document.querySelector('main.wrap');
+  if(isAdminRoute()){ main.style.display='none'; asc.style.display='block';
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab==='admin'));
+    renderAdmin(asc); return; }
+  main.style.display=''; asc.style.display='none';
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===state.tab));
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   const pg=document.getElementById('page-'+state.tab); pg.classList.add('active');
@@ -1202,7 +1205,6 @@ function renderDashboard(el){
       ${t?`<span class="subtle">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</span>`:''}
     </div>
     ${!useDB?`<div class="banner" id="dbBanner"><span>${I.flame}</span><div><b>On-device mode.</b> Scores save in this browser only. Add your free Supabase keys (see README) to sync across everyone's phones.</div><span class="x" onclick="this.parentElement.remove()">✕</span></div>`:''}
-    ${(useDB&&!isAdmin())?`<div class="banner" style="cursor:pointer" onclick="location.hash='#admin';render()"><span>${I.shield}</span><div><b>Read-only.</b> Anyone can view scores &amp; standings. <u>Sign in as admin</u> to record and edit results.</div></div>`:''}
     <div class="tiles">
       <div class="tile clk" data-nav="players" title="View players"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
       <div class="tile clk" data-nav="matches" title="View matches"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
@@ -2081,7 +2083,7 @@ setThemeIcon();
 /* ================================================================
    WIRE UP
    ================================================================ */
-document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b)return; state.tab=b.dataset.tab; render(); });
+document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b)return; if(b.dataset.tab==='admin'){ location.hash='#admin'; render(); return; } if(location.hash==='#admin'){ location.hash=''; } state.tab=b.dataset.tab; render(); });
 document.getElementById('adminBtn').addEventListener('click',()=>{ location.hash = isAdminRoute()?'':'#admin'; render(); });
 window.addEventListener('hashchange',render);
 document.getElementById('tournamentSel').addEventListener('change',e=>{ state.tournamentId=e.target.value; render(); });
