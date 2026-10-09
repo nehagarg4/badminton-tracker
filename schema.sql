@@ -20,11 +20,20 @@ create table if not exists tournaments (
 alter table tournaments add column if not exists banner_url text;
 alter table tournaments add column if not exists schedule_url text;
 
--- players: just names + an optional profile photo. Analytics are derived
--- from matches; this table only stores the avatar, keyed by name.
+-- players: name, optional profile photo, and the team (franchise) they belong to.
+-- Analytics are derived from matches; this table stores avatar + team, keyed by name.
 create table if not exists players (
   name       text primary key,
   avatar_url text,
+  team       text,
+  created_at timestamptz not null default now()
+);
+alter table players add column if not exists team text;
+
+-- teams (franchises)
+create table if not exists teams (
+  name       text primary key,
+  color      text,
   created_at timestamptz not null default now()
 );
 
@@ -33,15 +42,24 @@ create table if not exists matches (
   tournament_id uuid not null references tournaments(id) on delete cascade,
   match_no      int,
   group_label   text,
+  stage         text not null default 'League',   -- League | Quarter-final | Semi-final | Final | 3rd place
+  best_of       int  not null default 3,          -- 3 or 5 games
+  points        int  not null default 21,         -- 15 or 21 points per game
+  games         jsonb not null default '[]'::jsonb, -- [{"s1":21,"s2":18}, ...]
   team1_p1      text,
   team1_p2      text,
   team2_p1      text,
   team2_p2      text,
-  score1        int,
+  score1        int,   -- legacy single-game score (kept for back-compat)
   score2        int,
   status        text not null default 'scheduled', -- 'scheduled' | 'completed'
   created_at    timestamptz not null default now()
 );
+-- add the newer columns if the table already existed from an earlier run:
+alter table matches add column if not exists stage   text  not null default 'League';
+alter table matches add column if not exists best_of int   not null default 3;
+alter table matches add column if not exists points  int   not null default 21;
+alter table matches add column if not exists games   jsonb not null default '[]'::jsonb;
 
 create index if not exists matches_tournament_idx on matches(tournament_id);
 
@@ -52,6 +70,7 @@ create index if not exists matches_tournament_idx on matches(tournament_id);
 alter table tournaments enable row level security;
 alter table matches     enable row level security;
 alter table players     enable row level security;
+alter table teams       enable row level security;
 
 drop policy if exists "public tournaments" on tournaments;
 create policy "public tournaments" on tournaments for all using (true) with check (true);
@@ -61,6 +80,9 @@ create policy "public matches" on matches for all using (true) with check (true)
 
 drop policy if exists "public players" on players;
 create policy "public players" on players for all using (true) with check (true);
+
+drop policy if exists "public teams" on teams;
+create policy "public teams" on teams for all using (true) with check (true);
 
 -- ---------- storage: profile pics, banners, schedule images ----------
 insert into storage.buckets (id, name, public)
@@ -106,3 +128,20 @@ begin
       (tid, 14, 'October 17th Weekend', 'Rajeev',   'Gaurang',  'Ram',     'Prithvi');
   end if;
 end $$;
+
+-- ---------- seed teams (franchises) + player assignments ----------
+insert into teams (name, color) values
+  ('Hera Pheri Smashers',       '#2f6fed'),
+  ('Team D',                    '#d6454f'),
+  ('DRS-Drops Rallies Smashes', '#f2822f'),
+  ('Team C',                    '#8b5cf6')
+on conflict (name) do nothing;
+
+insert into players (name, team) values
+  ('Rajeev','Hera Pheri Smashers'),('Prakash','Hera Pheri Smashers'),('Gaurang','Hera Pheri Smashers'),
+  ('Sameer','Hera Pheri Smashers'),('Amogh','Hera Pheri Smashers'),('Deepankar','Hera Pheri Smashers'),
+  ('Prateek','Team D'),('Ranjith','Team D'),('Sasi','Team D'),('Prithvi','Team D'),('Ankur','Team D'),('Rama','Team D'),('Ram','Team D'),
+  ('Deepak','DRS-Drops Rallies Smashes'),('Gunvansh','DRS-Drops Rallies Smashes'),('Venky','DRS-Drops Rallies Smashes'),
+  ('Prasad','DRS-Drops Rallies Smashes'),('Ayas','DRS-Drops Rallies Smashes'),('Mahesh','DRS-Drops Rallies Smashes'),
+  ('Jagdeep','Team C'),('Ankit','Team C'),('Harsha','Team C'),('Rohith','Team C'),('Bhanu','Team C'),('Ramana','Team C')
+on conflict (name) do update set team = excluded.team;
