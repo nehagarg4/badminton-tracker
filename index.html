@@ -546,15 +546,20 @@ function saveSession(){ try{ if(session) sessionStorage.setItem('bad_session',JS
 const isAdmin=()=> !!(session && session.is_admin);
 const isSuper=()=> !!(session && session.is_super);
 const adminName=()=> session ? session.username : null;
-function actor(){ return isAdmin() ? session.username : (getUser()||null); }   // who did an action
+const umpireTids=()=> (session && Array.isArray(session.umpire_of)) ? session.umpire_of : [];   // tournaments this umpire may score
+const isUmpire=()=> umpireTids().length>0;
+function actor(){ return session ? session.username : (getUser()||null); }   // who did an action (admin, umpire, or device name)
 async function adminLogin(username,password){ if(!useDB||!sb) return {ok:false,err:'offline'};
   try{ const {data,error}=await sb.rpc('app_login',{u:username,p:password}); if(error) return {ok:false,err:error.message};
-    if(data&&data.ok){ session={username:data.username, is_admin:data.is_admin, is_super:data.is_super, pw:password}; saveSession(); } return data||{ok:false}; }
+    if(data&&data.ok){ session={username:data.username, is_admin:data.is_admin, is_super:data.is_super, umpire_of:data.umpire_of||[], pw:password}; saveSession(); } return data||{ok:false}; }
   catch(e){ return {ok:false,err:e.message}; } }
 function adminLogout(){ session=null; saveSession(); location.hash=''; render(); }
 async function initAuth(){ return; }   // session restored from sessionStorage above
-// editing is admin-only in live mode; on-device (?local) mode has no backend, so allow
-function requireAdmin(){ if(!useDB || isAdmin()) return true; toast('Admin login required'); location.hash='#admin'; render(); return false; }
+// full editing is admin-only; umpires may record scores for their assigned tournaments; ?local mode has no backend, so allow
+function requireAdmin(){ if(!useDB || isAdmin()) return true; if(session){ toast('Admins only'); return false; } toast('Admin login required'); location.hash='#admin'; render(); return false; }
+function requireScorer(tid){ if(!useDB || isAdmin() || umpireTids().includes(tid)) return true;
+  if(session){ toast('You can only record scores for your assigned tournament'); return false; }
+  toast('Log in to record scores'); location.hash='#admin'; render(); return false; }
 function relTime(iso){ if(!iso) return ''; const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
   if(s<45) return 'just now'; if(s<90) return '1m ago';
   const m=s/60; if(m<60) return Math.round(m)+'m ago';
@@ -1030,10 +1035,10 @@ function render(){
 
 /* ---- Admin (/admin or #admin) ---- */
 function renderAdmin(el){
-  const back=`<button class="btn sm" id="adBack">${isAdmin()?'Back to app':'Back'}</button>`;
+  const back=`<button class="btn sm" id="adBack">${session?'Back to app':'Back'}</button>`;
   if(!useDB){ el.innerHTML=`<div class="wrap"><div class="set-wrap"><div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div><div class="set-card"><p class="subtle">Admin login needs the live site (Supabase). You're in on-device mode.</p></div></div></div>`; el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); }; return; }
 
-  if(!isAdmin()){
+  if(!session){
     el.innerHTML=`<div class="wrap"><div class="set-wrap" style="max-width:440px">
       <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
       <div class="set-card"><h2>Sign in</h2>
@@ -1063,46 +1068,72 @@ function renderAdmin(el){
     return;
   }
 
+  const role = isSuper()?'Super-admin':(isAdmin()?'Admin':'Umpire');
+  const roleDesc = isAdmin()?'you can record &amp; edit results':'you can record scores for your assigned tournament(s)';
+  const umpNames = umpireTids().map(tid=>{ const t=(state.tournaments||[]).find(x=>x.id===tid); return t?t.name:null; }).filter(Boolean);
   el.innerHTML=`<div class="wrap"><div class="set-wrap">
     <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
-    <div class="set-card"><div class="set-row">${avatar(session.username,44)}<div class="sr-main"><div class="t">${esc(session.username)}</div><div class="d">${isSuper()?'Super-admin':'Admin'} · you can record &amp; edit results</div></div><button class="btn sm danger" id="adLogout" style="flex:none">Log out</button></div></div>
-    ${isSuper()?`<div class="set-card"><h2>Manage access <span class="captag">Super</span></h2><div id="adMgr"><p class="subtle">Loading…</p></div></div>`:''}
-    <div class="set-card danger"><h2>Danger zone</h2>
-      <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
+    <div class="set-card"><div class="set-row">${avatar(session.username,44)}<div class="sr-main"><div class="t">${esc(session.username)}</div><div class="d">${role} · ${roleDesc}</div></div><button class="btn sm danger" id="adLogout" style="flex:none">Log out</button></div>
+      ${(!isAdmin()&&umpNames.length)?`<div class="hint" style="margin-top:10px">Umpire for: ${umpNames.map(n=>`<span class="captag">${esc(n)}</span>`).join(' ')} — open <b>Matches</b> to record scores.</div>`:''}
+      ${(!isAdmin()&&!umpNames.length)?`<div class="hint" style="margin-top:10px">No tournaments assigned yet — ask a super-admin to assign you.</div>`:''}
     </div>
-    <div class="set-card"><h2>Activity log</h2><div id="adLog"><p class="subtle">Loading…</p></div></div>
+    ${isSuper()?`<div class="set-card"><h2>Manage access <span class="captag">Super</span></h2><div id="adMgr"><p class="subtle">Loading…</p></div></div>`:''}
+    ${isAdmin()?`<div class="set-card danger"><h2>Danger zone</h2>
+      <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
+    </div>`:''}
+    ${isSuper()?`<div class="set-card"><h2>Activity log <span class="captag">Super</span></h2><div id="adLog"><p class="subtle">Loading…</p></div></div>`:''}
   </div></div>`;
   el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
   el.querySelector('#adLogout').onclick=()=>{ store._audit('logout',{username:session.username}); adminLogout(); };
-  el.querySelector('#adReset').onclick=async()=>{ const t=curTournament(); if(!t) return; if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Cannot be undone.`)) return; try{ for(const m of tournamentMatches()) await store.updateMatch(m.id,{games:[],score1:null,score2:null,status:'scheduled'}); await loadAll(); toast('Scores reset'); renderAdmin(el); }catch(e){ toast('Could not reset'); } };
+  el.querySelector('#adReset')?.addEventListener('click',async()=>{ const t=curTournament(); if(!t) return; if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Cannot be undone.`)) return; try{ for(const m of tournamentMatches()) await store.updateMatch(m.id,{games:[],score1:null,score2:null,status:'scheduled'}); await loadAll(); toast('Scores reset'); renderAdmin(el); }catch(e){ toast('Could not reset'); } });
   if(isSuper()) renderAccessMgr(el.querySelector('#adMgr'));
-  (async()=>{ const box=el.querySelector('#adLog'); try{ const {data,error}=await sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(150);
-    if(error){ box.innerHTML=`<p class="subtle">Could not load the log (${esc(error.message)}). Run migrate10.sql.</p>`; return; }
-    if(!data||!data.length){ box.innerHTML='<p class="subtle">No activity recorded yet.</p>'; return; }
-    box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${data.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
+  if(isSuper()) (async()=>{ const box=el.querySelector('#adLog'); if(!box) return; try{ const {data,error}=await sb.rpc('app_audit',{su:session.username,sp:session.pw,lim:150});
+    if(error||!data||!data.ok){ box.innerHTML=`<p class="subtle">Could not load the log${error?' ('+esc(error.message)+')':''}. Run migrate11.sql.</p>`; return; }
+    const rows=data.rows||[];
+    if(!rows.length){ box.innerHTML='<p class="subtle">No activity recorded yet.</p>'; return; }
+    box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${rows.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
   }catch(e){ box.innerHTML='<p class="subtle">Could not load the log.</p>'; } })();
 }
 async function renderAccessMgr(box){
   if(!box) return;
   let users=[]; try{ const {data}=await sb.rpc('app_list_users',{su:session.username,sp:session.pw}); if(data&&data.ok) users=data.users||[]; }catch(e){}
   const players=Object.keys(state.players).sort((a,b)=>a.localeCompare(b));
+  const tours=(state.tournaments||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const tName=tid=>{ const t=tours.find(x=>x.id===tid); return t?t.name:'(tournament)'; };
+  const badges=u=>{ let s=''; if(u.is_super) s+=' <span class="captag">super</span>'; else if(u.is_admin) s+=' <span class="captag">admin</span>'; if((u.umpire_of||[]).length&&!u.is_admin) s+=' <span class="captag">umpire</span>'; return s; };
   box.innerHTML=`
-    <div id="usersBox">${users.length?users.map(u=>`<div class="set-row" style="padding:8px 0;border-bottom:1px solid var(--border)">
-      <div class="sr-main" style="display:flex;align-items:center;gap:10px">${avatar(u.username,30)}<div><div class="t">${esc(u.username)}${u.is_super?' <span class="captag">super</span>':''}</div></div></div>
+    <div id="usersBox">${users.length?users.map(u=>`<div class="set-row" style="padding:8px 0;border-bottom:1px solid var(--border);align-items:flex-start">
+      <div class="sr-main" style="display:flex;align-items:flex-start;gap:10px">${avatar(u.username,30)}<div><div class="t">${esc(u.username)}${badges(u)}</div>
+        ${(u.umpire_of||[]).length?`<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:6px">${u.umpire_of.map(tid=>`<span class="tmstage" style="display:inline-flex;align-items:center;gap:6px">${esc(tName(tid))}<button class="uUmpRm" data-u="${esc(u.username)}" data-t="${esc(tid)}" title="Remove umpire access" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-weight:800;line-height:1">×</button></span>`).join('')}</div>`:''}
+      </div></div>
       ${u.username.toLowerCase()===session.username.toLowerCase()?'<span class="subtle">you</span>':`<button class="btn sm ghost danger uRm" data-u="${esc(u.username)}" style="flex:none">Remove</button>`}
-    </div>`).join(''):'<p class="subtle">No admins yet.</p>'}</div>
-    <div class="hint" style="margin:14px 0 8px">Make a player an admin — pick them and set a password. (Blank password on an existing admin just toggles super.)</div>
+    </div>`).join(''):'<p class="subtle">No users yet.</p>'}</div>
+
+    <div class="hint" style="margin:14px 0 8px">Add an <b>admin</b> (full edit, all tournaments) — pick a player and set a password. Blank password on an existing admin just toggles super.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="uName" style="flex:1;min-width:150px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
       <input id="uPass" type="text" placeholder="password" style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)">
       <label class="subtle" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="uSuper"> super</label>
-      <button class="btn sm primary" id="uSave" style="flex:none">Save</button>
+      <button class="btn sm primary" id="uSave" style="flex:none">Add admin</button>
+    </div>
+
+    <div class="hint" style="margin:16px 0 8px">Add an <b>umpire</b> (scores only, one tournament) — pick a player, set a password, choose the tournament.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="umpName" style="flex:1;min-width:140px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+      <input id="umpPass" type="text" placeholder="password" style="flex:1;min-width:110px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)">
+      <select id="umpT" style="flex:1;min-width:140px">${tours.length?tours.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join(''):'<option value="">— no tournaments —</option>'}</select>
+      <button class="btn sm primary" id="umpSave" style="flex:none">Add umpire</button>
     </div>`;
-  box.querySelectorAll('.uRm').forEach(b=>b.onclick=async()=>{ if(!confirm(`Remove admin ${b.dataset.u}?`)) return;
+  box.querySelectorAll('.uRm').forEach(b=>b.onclick=async()=>{ if(!confirm(`Remove ${b.dataset.u}? This removes all their access.`)) return;
     try{ const {data}=await sb.rpc('app_remove_user',{su:session.username,sp:session.pw,target:b.dataset.u}); if(data&&data.ok){ store._audit('admin.remove',{username:b.dataset.u}); renderAccessMgr(box); toast('Removed'); } else toast('Could not remove'); }catch(e){ toast('Could not remove'); } });
+  box.querySelectorAll('.uUmpRm').forEach(b=>b.onclick=async()=>{
+    try{ const {data}=await sb.rpc('app_set_umpire',{su:session.username,sp:session.pw,target:b.dataset.u,pass:'',tid:b.dataset.t,on_flag:false}); if(data&&data.ok){ store._audit('umpire.remove',{username:b.dataset.u,tournament:b.dataset.t}); renderAccessMgr(box); toast('Umpire access removed'); } else toast((data&&data.err)||'Could not remove'); }catch(e){ toast('Could not remove'); } });
   box.querySelector('#uSave').onclick=async()=>{ const name=box.querySelector('#uName').value; const pass=box.querySelector('#uPass').value||''; const sup=box.querySelector('#uSuper').checked;
     if(!name){ toast('Pick a name'); return; }
     try{ const {data}=await sb.rpc('app_set_user',{su:session.username,sp:session.pw,target:name,pass:pass,admin:true,super:sup}); if(data&&data.ok){ store._audit('admin.set',{username:name,super:sup}); box.querySelector('#uPass').value=''; renderAccessMgr(box); toast('Saved'); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
+  box.querySelector('#umpSave').onclick=async()=>{ const name=box.querySelector('#umpName').value; const pass=box.querySelector('#umpPass').value||''; const tid=box.querySelector('#umpT').value;
+    if(!name){ toast('Pick a name'); return; } if(!tid){ toast('Pick a tournament'); return; }
+    try{ const {data}=await sb.rpc('app_set_umpire',{su:session.username,sp:session.pw,target:name,pass:pass,tid:tid,on_flag:true}); if(data&&data.ok){ store._audit('umpire.set',{username:name,tournament:tid}); box.querySelector('#umpPass').value=''; renderAccessMgr(box); toast('Umpire added'); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
 }
 
 /* ---- Settings ---- */
@@ -1767,8 +1798,8 @@ function openMatchModal(id){
 }
 
 function openScoreModal(id){
-  if(!requireAdmin()) return;
   const m=state.matches.find(x=>x.id===id); if(!m) return;
+  if(!requireScorer(m.tournament_id)) return;
   const bo=bestOf(m), pts=m.points||21, need=needGames(m);
   const prev=gamesOf(m);
   const rows=Array.from({length:bo},(_,i)=>prev[i]||{s1:'',s2:''});
@@ -1804,12 +1835,12 @@ function openScoreModal(id){
     if(Math.max(a,b)<need){ err.textContent='Best of '+bo+': a team needs to win '+need+' games. Enter the remaining game(s).'; err.classList.add('show'); return; }
     const commit=async()=>{ try{ await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Result saved'); }
       catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); } };
-    if(!getUser()){ openUserModal(commit); return; }   // ask name once, then save with attribution
+    if(!actor()){ openUserModal(commit); return; }   // ask name once, then save with attribution
     await commit();
   };
   modalEl.querySelector('#clearScore')?.addEventListener('click',async()=>{
     const commit=async()=>{ try{ await store.updateMatch(id,{games:[], score1:null, score2:null, status:'scheduled', ...stampBy()}); closeModal(); await loadAll(); render(); toast('Score cleared'); }catch(e){} };
-    if(!getUser()){ openUserModal(commit); return; }
+    if(!actor()){ openUserModal(commit); return; }
     await commit();
   });
 }
