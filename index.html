@@ -846,7 +846,8 @@ function renderMatches(el){
   const stageOrder=tStageNames(t); const stageIdx = s => { const i=stageOrder.indexOf(s); return i<0?stageOrder.length:i; };
   const byStage={};
   ms.forEach(m=>{ const s=m.stage||'League'; (byStage[s]=byStage[s]||[]).push(m); });
-  const stages=Object.keys(byStage).sort((a,b)=>stageIdx(a)-stageIdx(b)||a.localeCompare(b));
+  const stageDone = s => byStage[s].length>0 && byStage[s].every(m=>m.status==='completed');
+  const stages=Object.keys(byStage).sort((a,b)=>(stageDone(a)?1:0)-(stageDone(b)?1:0)||stageIdx(a)-stageIdx(b)||a.localeCompare(b));
 
   el.innerHTML = `
     <div class="sectionhead"><h2>Matches</h2><div class="spacer"></div>
@@ -854,7 +855,7 @@ function renderMatches(el){
       <button class="btn primary sm" id="addMatchBtn">${I.plus}Add match</button>
     </div>
     ${ms.length? stages.map(stage=>{
-      const sm=byStage[stage].slice().sort((a,b)=>(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
+      const sm=byStage[stage].slice().sort((a,b)=>((a.status==='completed')?1:0)-((b.status==='completed')?1:0)||(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
       const stKey='st:'+stage; const stOpen=!matchCollapsed.has(stKey);
       return `<div class="stageblock">
         <button class="stagehead ${stOpen?'':'collapsed'}" data-mc="${esc(stKey)}"><span class="chev">${I.chevron}</span><span class="stagebadge">${esc(stage)}</span><div class="line"></div><span class="count num">${sm.filter(m=>m.status==='completed').length}/${sm.length}</span></button>
