@@ -562,7 +562,7 @@ function openUserModal(afterSet){
   setTimeout(()=>sel.focus(),60);
   const save=()=>{ const n = sel.value==='__other__' ? (modalEl.querySelector('#uName').value||'').trim() : sel.value;
     if(!n){ sel.value==='__other__' ? modalEl.querySelector('#uName').focus() : sel.focus(); return; }
-    setUser(n); closeModal(); renderUserPill(); if(typeof afterSet==='function') afterSet(); };
+    setUser(n); store._audit(cur?'login':'signup',{name:n, prev:cur||null}); closeModal(); renderUserPill(); if(typeof afterSet==='function') afterSet(); };
   modalEl.querySelector('#uSave').onclick=save;
   modalEl.querySelector('#uName')?.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
 }
@@ -766,6 +766,31 @@ const store = {
     return dataUrl;
   },
 };
+
+/* ================================================================
+   AUDIT LOG — append-only backend table (Supabase mode only).
+   Wraps every store mutation so each change is recorded with
+   actor (logged-in name) + timestamp. No UI; read it in Supabase.
+   ================================================================ */
+store._audit = async function(action, detail){
+  if(!useDB || !sb) return;
+  try{ await sb.from('audit_log').insert({ actor:(typeof getUser==='function'?getUser():'')||null, action, detail:detail||null }); }catch(e){}
+};
+(function(){
+  const sanit=v=>{ try{ return JSON.parse(JSON.stringify(v,(k,val)=> (typeof val==='string'&&val.length>180)?('['+val.length+' chars]'):val)); }catch(e){ return null; } };
+  const MUT={ addTournament:'tournament.create', updateTournament:'tournament.update', deleteTournament:'tournament.delete',
+    addMatch:'match.create', updateMatch:'match.update', deleteMatch:'match.delete',
+    addPlayer:'player.create', addPlayers:'player.import', removePlayer:'player.delete', renamePlayer:'player.rename',
+    setRoster:'roster.set', setPlayerAvatar:'player.photo',
+    addTeam:'team.create', updateTeam:'team.update', removeTeam:'team.delete', copyTeamsAndRosters:'tournament.copy' };
+  Object.keys(MUT).forEach(fn=>{ const orig=store[fn]; if(typeof orig!=='function') return;
+    store[fn]=async function(...args){ const r=await orig.apply(this,args);
+      try{ let act=MUT[fn];
+        if(fn==='updateMatch'){ const p=args[1]||{}; if('games' in p || 'status' in p) act='match.score'; }
+        if(fn==='updateTeam'){ const p=args[2]||{}; if('captain' in p) act='team.captain'; else if('logo' in p) act='team.logo'; else if('name' in p) act='team.rename'; }
+        this._audit(act, sanit(args)); }catch(e){}
+      return r; }; });
+})();
 
 /* ================================================================
    STATE
