@@ -647,6 +647,14 @@ function sideTeam(m, side){
   return ts.length===1 ? ts[0] : null;
 }
 function fixtureKey(m){ const a=sideTeam(m,1), b=sideTeam(m,2); return (a&&b) ? [a,b].sort().join(' ~|~ ') : '~other~'; }
+// sequential number within the match's fixture (1,2,3…) so each fixture reads in order
+function pairNoFor(m){
+  const st=m.stage||'League', fk=fixtureKey(m);
+  const peers=state.matches.filter(x=>x.tournament_id===m.tournament_id && (x.stage||'League')===st && fixtureKey(x)===fk)
+    .sort((a,b)=>(a.match_no||0)-(b.match_no||0)||(a.created_at||'').localeCompare(b.created_at||''));
+  const i=peers.findIndex(x=>x.id===m.id);
+  return i>=0 ? i+1 : (m.match_no||'');
+}
 function teamChip(name){ if(!name) return ''; const c=teamColor(name); return `<span class="tchip" data-teamnav="${esc(name)}" title="Open ${esc(name)}" style="--tc:${c};--tcbg:${c}22"><i style="background:${c}"></i>${esc(name)}</span>`; }
 // clickable player name(s) — deep-link to the player's card
 function playerLink(n){ return n? `<span class="pclick" data-player="${esc(n)}">${esc(n)}</span>` : ''; }
@@ -798,7 +806,7 @@ function renderDashboard(el){
         <div class="card-title">Recent Results</div>
         ${recent.length? `<div style="display:flex;flex-direction:column;gap:9px">${recent.map(m=>{const w=winnerOf(m);return `
           <div style="display:flex;align-items:center;gap:10px;font-size:13.5px">
-            <span class="num" style="color:var(--muted);font-weight:800;width:26px">#${m.match_no}</span>
+            <span class="num" style="color:var(--muted);font-weight:800;width:26px">#${pairNoFor(m)}</span>
             <span style="flex:1;min-width:0">
               <span style="font-weight:${w===1?'800':'600'};color:${w===1?'var(--win)':'inherit'}">${playersLinked(m.team1_p1,m.team1_p2)}</span>
               <span style="color:var(--muted);font-weight:800" class="num"> ${gamesWon(m).a}–${gamesWon(m).b} </span>
@@ -874,7 +882,7 @@ function matchRow(m){
   const ta=sideTeam(m,1), tb=sideTeam(m,2);
   const fmt=`Best of ${bestOf(m)} · ${m.points||21} pts`;
   return `<div class="matchrow">
-    <div class="mno"><b class="num">${m.match_no??''}</b><span>Match</span></div>
+    <div class="mno"><b class="num">${pairNoFor(m)}</b><span>Match</span></div>
     <div class="teams">
       <div class="team a ${w===1?'win':''}">
         <div class="chips">${ta?teamChip(ta):'<span class="tag">Team A</span>'}</div>
@@ -1125,7 +1133,7 @@ function renderTeams(el){
             const w=winnerOf(m); const won=w&&((w===1&&isA)||(w===2&&!isA)); const done=m.status==='completed';
             const mine=playersLinked(isA?m.team1_p1:m.team2_p1, isA?m.team1_p2:m.team2_p2);
             return `<div class="tmrow" data-score="${m.id}">
-              <span class="num tmno">#${m.match_no}</span>
+              <span class="num tmno">#${pairNoFor(m)}</span>
               <span class="tmstage">${esc(m.stage||'League')}</span>
               <span class="tmwho">${mine} <span class="subtle">vs ${opp?esc(opp):'?'}</span></span>
               ${done?`<span class="res ${won?'w':'l'}">${won?'W':'L'}</span><span class="num tmsc">${myG}–${oppG}</span>`:`<span class="subtle tmsc">—</span>`}
@@ -1208,10 +1216,7 @@ function openMatchModal(id){
     <div class="modal-head"><h3>${existing?'Edit match':'Add match'}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="mErr"></div>
-      <div class="row2">
-        <div class="field"><label>Match #</label><input id="fNo" type="number" min="1" value="${existing?existing.match_no??'':nextNo}"></div>
-        <div class="field"><label>Stage</label><select id="fStage">${STAGES.map(s=>`<option ${((existing&&existing.stage===s)||(!existing&&s==='League'))?'selected':''}>${s}</option>`).join('')}</select></div>
-      </div>
+      <div class="field"><label>Stage</label><select id="fStage">${STAGES.map(s=>`<option ${((existing&&existing.stage===s)||(!existing&&s==='League'))?'selected':''}>${s}</option>`).join('')}</select></div>
       <div class="row2">
         <div class="field"><label>Format</label><select id="fBestOf"><option value="3" ${fmt0.best_of===3?'selected':''}>Best of 3</option><option value="5" ${fmt0.best_of===5?'selected':''}>Best of 5</option></select></div>
         <div class="field"><label>Points / game</label><select id="fPoints"><option value="21" ${fmt0.points===21?'selected':''}>21 points</option><option value="15" ${fmt0.points===15?'selected':''}>15 points</option></select></div>
@@ -1243,16 +1248,15 @@ function openMatchModal(id){
   modalEl.querySelector('#saveMatch').onclick=async()=>{
     const val=k=>modalEl.querySelector(k).value;
     const tA=val('#tA'), tB=val('#tB'), a1=val('#a1'), a2=val('#a2'), b1=val('#b1'), b2=val('#b2');
-    const no=parseInt(modalEl.querySelector('#fNo').value,10);
     const err=modalEl.querySelector('#mErr');
     if(!a1||!b1){ err.textContent='Pick Player 1 for each team. If a list is empty, add players to that team on the Players tab first.'; err.classList.add('show'); return; }
     const chosen=[a1,a2,b1,b2].filter(Boolean);
     if(new Set(chosen).size!==chosen.length){ err.textContent='A player can\'t appear twice in the same match.'; err.classList.add('show'); return; }
-    const patch={ match_no:isNaN(no)?null:no, stage:val('#fStage'), best_of:parseInt(val('#fBestOf'),10), points:parseInt(val('#fPoints'),10),
+    const patch={ stage:val('#fStage'), best_of:parseInt(val('#fBestOf'),10), points:parseInt(val('#fPoints'),10),
       team1:tA, team2:tB, team1_p1:a1, team1_p2:a2||null, team2_p1:b1, team2_p2:b2||null };
     try{
       if(existing) await store.updateMatch(id,patch);
-      else await store.addMatch({ ...patch, tournament_id:state.tournamentId, status:'scheduled' });
+      else await store.addMatch({ ...patch, match_no:nextNo, tournament_id:state.tournamentId, status:'scheduled' });
       closeModal(); await loadAll(); render(); toast(existing?'Match updated':'Match added');
     }catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); }
   };
@@ -1264,7 +1268,7 @@ function openScoreModal(id){
   const prev=gamesOf(m);
   const rows=Array.from({length:bo},(_,i)=>prev[i]||{s1:'',s2:''});
   openModal(`
-    <div class="modal-head"><h3>Record score · Match ${m.match_no??''}</h3><button class="x" data-close>✕</button></div>
+    <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="sErr"></div>
       <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game</p>
@@ -1416,7 +1420,7 @@ function openPlayerDetail(name, ms){
       <div class="card-title" style="margin-bottom:9px">Match history</div>
       <ul class="pd-list">${hist.map(h=>{ const side=[h.m.team1_p1,h.m.team1_p2].includes(name)?1:2; const gw=gamesWon(h.m); const mg=side===1?gw.a:gw.b, og=side===1?gw.b:gw.a; const opp=oppOf(h.m,name); return `<li>
         <span class="res ${h.won?'w':'l'}">${h.won?'W':'L'}</span>
-        <span style="min-width:0">#${h.m.match_no} ${h.partner?'with '+esc(h.partner):''} <span style="color:var(--muted)">vs ${esc(team(opp[0],opp[1]))}</span></span>
+        <span style="min-width:0">#${pairNoFor(h.m)} ${h.partner?'with '+esc(h.partner):''} <span style="color:var(--muted)">vs ${esc(team(opp[0],opp[1]))}</span></span>
         <span class="mscore">${mg}–${og}</span>
       </li>`;}).join('')}</ul>
       ${hist.length?'':'<p class="subtle" style="margin-top:4px">No matches yet.</p>'}
