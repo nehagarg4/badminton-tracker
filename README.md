@@ -1,14 +1,16 @@
 # 🏸 Badminton Tracker
 
+**Live:** https://nehagarg4.github.io/badminton-tracker/
+
 Free match-score, standings & player-analytics website for the JCC Badminton Series
-(and any future tournaments). Same stack as the babaji expense tracker:
+(and any future tournaments).
 
 - **One file** — `index.html`, plain HTML/JS, no build step.
 - **Supabase** (free tier) — shared database, so scores sync across everyone's phones.
-- **Netlify** (free tier) — hosting.
+- **GitHub Pages** (free) — hosting. Auto-deploys on every `git push` to `main`.
 
-It works **immediately** with no setup (data saves in your browser only). Wire up
-Supabase when you want everyone to see the same live data.
+It's **already live** and usable (data saves in your browser only, "on-device mode").
+Do the one Supabase step below when you want everyone to see the same live data.
 
 ---
 
@@ -44,22 +46,19 @@ const SUPABASE_KEY = 'eyJhbGciOi...your-anon-public-key...';
 ```
 Save. The pill in the header now says **Live sync**.
 
-### 3. Put it online (Netlify)
-**Easiest — drag & drop:**
-1. Go to <https://app.netlify.com/drop>.
-2. Drag this whole `badminton` folder onto the page. Done — you get a live URL.
-3. To update later, drag the folder again (or connect the GitHub repo below for auto-deploy).
-
-**Or connect GitHub (auto-deploys on every push), like babaji:**
+### 3. Publish the change
+Hosting is already set up on **GitHub Pages** (repo: `nehagarg4/badminton-tracker`).
+After editing `index.html`, just push — the live site updates in ~1 minute:
 ```bash
 cd /Users/ankitgarg/data/badminton
-git add -A && git commit -m "Badminton tracker"
-# create an empty repo on github.com, then:
-git remote add origin https://github.com/<you>/badminton-tracker.git
-git push -u origin main
+git add -A && git commit -m "Add Supabase keys"
+git push
 ```
-Then in Netlify → **Add new site → Import from GitHub** → pick the repo. No build command;
-publish directory = `/` (repo root).
+That's it. Live at https://nehagarg4.github.io/badminton-tracker/
+
+> Prefer Netlify (like babaji) or a custom domain? Both still work — the repo can be
+> imported into Netlify (**Add new site → Import from GitHub**, no build command,
+> publish dir `/`), or a custom domain added under the repo's **Settings → Pages**.
 
 ---
 
