@@ -14,11 +14,13 @@ create table if not exists tournaments (
   status       text not null default 'active',   -- 'active' | 'completed'
   banner_url   text,
   schedule_url text,
+  stage_config jsonb not null default '{}'::jsonb, -- per-stage {best_of, points}
   created_at   timestamptz not null default now()
 );
--- add image columns if the table already existed from an earlier run:
-alter table tournaments add column if not exists banner_url text;
+-- add newer columns if the table already existed from an earlier run:
+alter table tournaments add column if not exists banner_url   text;
 alter table tournaments add column if not exists schedule_url text;
+alter table tournaments add column if not exists stage_config jsonb not null default '{}'::jsonb;
 
 -- players: name, optional profile photo, and the team (franchise) they belong to.
 -- Analytics are derived from matches; this table stores avatar + team, keyed by name.
