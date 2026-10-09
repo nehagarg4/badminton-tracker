@@ -7,12 +7,25 @@ create extension if not exists "pgcrypto";
 
 -- ---------- tables ----------
 create table if not exists tournaments (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  edition     text,
-  start_date  date,
-  status      text not null default 'active',   -- 'active' | 'completed'
-  created_at  timestamptz not null default now()
+  id           uuid primary key default gen_random_uuid(),
+  name         text not null,
+  edition      text,
+  start_date   date,
+  status       text not null default 'active',   -- 'active' | 'completed'
+  banner_url   text,
+  schedule_url text,
+  created_at   timestamptz not null default now()
+);
+-- add image columns if the table already existed from an earlier run:
+alter table tournaments add column if not exists banner_url text;
+alter table tournaments add column if not exists schedule_url text;
+
+-- players: just names + an optional profile photo. Analytics are derived
+-- from matches; this table only stores the avatar, keyed by name.
+create table if not exists players (
+  name       text primary key,
+  avatar_url text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists matches (
@@ -38,12 +51,30 @@ create index if not exists matches_tournament_idx on matches(tournament_id);
 -- as a shared Google Sheet. Tighten later if you ever need to.
 alter table tournaments enable row level security;
 alter table matches     enable row level security;
+alter table players     enable row level security;
 
 drop policy if exists "public tournaments" on tournaments;
 create policy "public tournaments" on tournaments for all using (true) with check (true);
 
 drop policy if exists "public matches" on matches;
 create policy "public matches" on matches for all using (true) with check (true);
+
+drop policy if exists "public players" on players;
+create policy "public players" on players for all using (true) with check (true);
+
+-- ---------- storage: profile pics, banners, schedule images ----------
+insert into storage.buckets (id, name, public)
+  values ('images', 'images', true)
+  on conflict (id) do nothing;
+
+drop policy if exists "images read"   on storage.objects;
+drop policy if exists "images write"  on storage.objects;
+drop policy if exists "images update" on storage.objects;
+drop policy if exists "images delete" on storage.objects;
+create policy "images read"   on storage.objects for select using (bucket_id = 'images');
+create policy "images write"  on storage.objects for insert with check (bucket_id = 'images');
+create policy "images update" on storage.objects for update using (bucket_id = 'images');
+create policy "images delete" on storage.objects for delete using (bucket_id = 'images');
 
 -- ============================================================
 --  Seed: JCC Badminton Series 2026 — Fall Edition (14 matches)
@@ -54,8 +85,8 @@ do $$
 declare tid uuid;
 begin
   if not exists (select 1 from tournaments where name = 'JCC Badminton Series 2026') then
-    insert into tournaments (name, edition, start_date, status)
-      values ('JCC Badminton Series 2026', 'Fall Edition', '2026-10-10', 'active')
+    insert into tournaments (name, edition, start_date, status, schedule_url)
+      values ('JCC Badminton Series 2026', 'Fall Edition', '2026-10-10', 'active', 'assets/jcc-fall-2026-schedule.webp')
       returning id into tid;
 
     insert into matches (tournament_id, match_no, group_label, team1_p1, team1_p2, team2_p1, team2_p2) values

@@ -256,6 +256,28 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .scope-seg button.on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:11px 18px;border-radius:999px;font-size:13.5px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:200;opacity:0;pointer-events:none;transition:.2s}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* avatars */
+.av{display:inline-flex;align-items:center;justify-content:center;border-radius:50%;overflow:hidden;flex-shrink:0;vertical-align:middle;color:#fff;font-weight:800;font-family:'Archivo',sans-serif;line-height:1}
+.av img{width:100%;height:100%;object-fit:cover;display:block}
+.rankcell .av{margin:0 2px}
+/* tournament banner hero */
+.banner-hero{position:relative;border-radius:var(--radius);overflow:hidden;margin-bottom:18px;border:1px solid var(--border);background:var(--surface2)}
+.banner-hero img{width:100%;max-height:230px;object-fit:cover;display:block}
+.banner-hero .cap{position:absolute;left:0;right:0;bottom:0;padding:16px 18px;background:linear-gradient(to top,rgba(0,0,0,.75),rgba(0,0,0,0))}
+.banner-hero .cap h2{color:#fff;font-size:23px;font-weight:800;letter-spacing:-.01em}
+.banner-hero .cap .sub{color:#fff;font-size:13px;opacity:.92;font-weight:600;margin-top:2px}
+/* image uploader */
+.uploader{display:flex;align-items:center;gap:12px}
+.uploader .thumb{width:56px;height:56px;border-radius:10px;overflow:hidden;background:var(--surface2);border:1px solid var(--border);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:22px}
+.uploader .thumb img{width:100%;height:100%;object-fit:cover}
+.uploader .ubtns{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+/* lightbox */
+.lightbox{position:fixed;inset:0;background:rgba(5,8,12,.92);z-index:300;display:flex;align-items:center;justify-content:center;padding:18px;opacity:0;pointer-events:none;transition:opacity .15s}
+.lightbox.show{opacity:1;pointer-events:auto}
+.lightbox img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 50px rgba(0,0,0,.5)}
+.lightbox .lbx{position:absolute;top:calc(16px + env(safe-area-inset-top,0px));right:16px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.16);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center}
+.lightbox .lbx:hover{background:rgba(255,255,255,.28)}
 </style>
 </head>
 <body>
@@ -314,10 +336,17 @@ const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-
 const nowISO = () => new Date().toISOString();
 const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* ---------- images: pick, resize/compress, avatar rendering ---------- */
+function pickImage(){ return new Promise(res=>{ const i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.style.position='fixed'; i.style.left='-9999px'; document.body.appendChild(i); i.onchange=()=>{ const f=(i.files&&i.files[0])||null; i.remove(); res(f); }; i.click(); }); }
+function resizeImage(file,max,quality,square){ return new Promise((resolve,reject)=>{ const img=new Image(); const url=URL.createObjectURL(file); img.onload=()=>{ let sw=img.width,sh=img.height,sx=0,sy=0; if(square){ const m=Math.min(sw,sh); sx=(sw-m)/2; sy=(sh-m)/2; sw=sh=m; } let dw=sw,dh=sh; if(Math.max(dw,dh)>max){ const s=max/Math.max(dw,dh); dw=Math.round(dw*s); dh=Math.round(dh*s); } const c=document.createElement('canvas'); c.width=dw; c.height=dh; const ctx=c.getContext('2d'); ctx.fillStyle='#fff'; ctx.fillRect(0,0,dw,dh); ctx.drawImage(img,sx,sy,sw,sh,0,0,dw,dh); URL.revokeObjectURL(url); try{ resolve(c.toDataURL('image/jpeg',quality||0.82)); }catch(e){ reject(e); } }; img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('Could not read that image.')); }; img.src=url; }); }
+function colorFor(name){ let h=0; const s=name||''; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))%360; return `hsl(${h},50%,45%)`; }
+function avatar(name,size){ const u=state.players[name]&&state.players[name].avatar_url; const init=((name||'?').trim().charAt(0)||'?'); return u? `<span class="av" style="width:${size}px;height:${size}px"><img src="${esc(u)}" alt="" loading="lazy"></span>` : `<span class="av ini" style="width:${size}px;height:${size}px;background:${colorFor(name)};font-size:${Math.round(size*0.42)}px">${esc(init)}</span>`; }
+function openLightbox(url){ let lb=document.getElementById('lightbox'); if(!lb){ lb=document.createElement('div'); lb.id='lightbox'; lb.className='lightbox'; lb.innerHTML='<button class="lbx" aria-label="Close">✕</button><img alt="">'; document.body.appendChild(lb); lb.addEventListener('click',e=>{ if(e.target===lb||e.target.classList.contains('lbx')){ lb.classList.remove('show'); } }); } lb.querySelector('img').src=url; requestAnimationFrame(()=>lb.classList.add('show')); }
+
 /* ---------- seed data: JCC Badminton Series 2026, Fall Edition ---------- */
 function seedData(){
   const tid = 'jcc-2026-fall';
-  const t = { id:tid, name:'JCC Badminton Series 2026', edition:'Fall Edition', start_date:'2026-10-10', status:'active', created_at:nowISO() };
+  const t = { id:tid, name:'JCC Badminton Series 2026', edition:'Fall Edition', start_date:'2026-10-10', status:'active', banner_url:null, schedule_url:'assets/jcc-fall-2026-schedule.webp', created_at:nowISO() };
   const g1='Matches 1–9', g2='Sunday Matches', g3='October 17th Weekend';
   const M = [
     [1,g1,'Rajeev','Prakash','Prateek','Ranjith'],
@@ -344,7 +373,7 @@ function seedData(){
 /* ================================================================
    STORE — unified async API over Supabase OR localStorage
    ================================================================ */
-const LS_T='bad_tracker_tournaments', LS_M='bad_tracker_matches';
+const LS_T='bad_tracker_tournaments', LS_M='bad_tracker_matches', LS_P='bad_tracker_players';
 const store = {
   async init(){
     if(useDB) return;
@@ -396,15 +425,31 @@ const store = {
     if(useDB){ const {error}=await sb.from('matches').delete().eq('id',id); if(error)throw error; return; }
     this._saveM(this._lsM().filter(m=>m.id!==id));
   },
+  _lsP(){ try{return JSON.parse(localStorage.getItem(LS_P)||'{}')}catch(e){return {}} },
+  _saveP(o){ try{localStorage.setItem(LS_P,JSON.stringify(o)); return true;}catch(e){return false;} },
+  async getPlayers(){
+    if(useDB){ const {data,error}=await sb.from('players').select('*'); if(error){console.warn('players:',error.message);return {};} const o={}; (data||[]).forEach(p=>o[p.name]={name:p.name,avatar_url:p.avatar_url}); return o; }
+    return this._lsP();
+  },
+  async setPlayerAvatar(name,url){
+    if(useDB){ const {error}=await sb.from('players').upsert({name,avatar_url:url},{onConflict:'name'}); if(error)throw error; return; }
+    const o=this._lsP(); o[name]={name,avatar_url:url}; if(!this._saveP(o)) throw new Error('Image too large for on-device mode. Connect Supabase to store photos.');
+  },
+  // Returns the URL to persist. Supabase: uploads to Storage and returns a public URL. On-device: returns the data URL itself.
+  async saveImage(dataUrl,path){
+    if(useDB){ const blob=await (await fetch(dataUrl)).blob(); const {error}=await sb.storage.from('images').upload(path,blob,{upsert:true,contentType:'image/jpeg'}); if(error)throw error; return sb.storage.from('images').getPublicUrl(path).data.publicUrl+'?v='+Date.now(); }
+    return dataUrl;
+  },
 };
 
 /* ================================================================
    STATE
    ================================================================ */
-const state = { tab:'dashboard', tournamentId:null, scope:'tournament', tournaments:[], matches:[] };
+const state = { tab:'dashboard', tournamentId:null, scope:'tournament', tournaments:[], matches:[], players:{} };
 
 async function loadAll(){
-  [state.tournaments, state.matches] = await Promise.all([store.getTournaments(), store.getMatches()]);
+  const [ts,ms,ps] = await Promise.all([store.getTournaments(), store.getMatches(), store.getPlayers()]);
+  state.tournaments=ts; state.matches=ms; state.players=ps||{};
   if(!state.tournamentId || !state.tournaments.find(t=>t.id===state.tournamentId)){
     const active = state.tournaments.find(t=>t.status==='active') || state.tournaments[0];
     state.tournamentId = active ? active.id : null;
@@ -492,6 +537,7 @@ function renderDashboard(el){
   const recent=done.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')||b.match_no-a.match_no).slice(0,5);
 
   el.innerHTML = `
+    ${t&&t.banner_url?`<div class="banner-hero"><img src="${esc(t.banner_url)}" alt=""><div class="cap"><h2>${esc(t.name)}</h2><div class="sub">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</div></div></div>`:''}
     <div class="sectionhead"><h2>${t?esc(t.name):'Dashboard'}</h2>
       <div class="spacer"></div>
       ${t?`<span class="subtle">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</span>`:''}
@@ -509,6 +555,7 @@ function renderDashboard(el){
         ${stats.length? `<div style="display:flex;flex-direction:column;gap:2px">${stats.slice(0,5).map((p,i)=>`
           <button class="pdrow" data-player="${esc(p.name)}" style="display:flex;align-items:center;gap:11px;padding:9px 6px;border-radius:8px;text-align:left;width:100%" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='none'">
             <span class="rankno ${i===0?'top':''}">${i===0?I.trophy.replace('<svg','<svg style=\'width:16px;height:16px\'')  :'#'+(i+1)}</span>
+            ${avatar(p.name,28)}
             <span class="pname" style="flex:1">${esc(p.name)}</span>
             <span class="pill w">${p.won}W</span><span class="pill l">${p.lost}L</span>
             <span class="num" style="width:44px;text-align:right;font-weight:800">${Math.round(p.pct*100)}%</span>
@@ -542,6 +589,7 @@ function renderMatches(el){
 
   el.innerHTML = `
     <div class="sectionhead"><h2>Matches</h2><div class="spacer"></div>
+      <button class="btn sm" id="schedBtn">${I.cal}${t.schedule_url?'View schedule':'Add schedule'}</button>
       <button class="btn primary sm" id="addMatchBtn">${I.plus}Add match</button>
     </div>
     ${ms.length? order.map(g=>`
@@ -552,6 +600,14 @@ function renderMatches(el){
     : emptyState('No matches yet','Add the first match of this tournament.',I.score)}`;
 
   el.querySelector('#addMatchBtn')?.addEventListener('click',()=>openMatchModal(null));
+  el.querySelector('#schedBtn')?.addEventListener('click',async()=>{
+    const tt=curTournament();
+    if(tt&&tt.schedule_url){ openLightbox(tt.schedule_url); return; }
+    const f=await pickImage(); if(!f) return;
+    toast('Uploading schedule…');
+    try{ const data=await resizeImage(f,1600,0.85,false); const url=await store.saveImage(data,`tournament/${tt.id}/schedule.jpg`); await store.updateTournament(tt.id,{schedule_url:url}); await loadAll(); render(); openLightbox(url); toast('Schedule saved'); }
+    catch(e){ toast(e.message||'Upload failed'); }
+  });
   el.querySelectorAll('[data-score]').forEach(b=>b.onclick=()=>openScoreModal(b.dataset.score));
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>openMatchModal(b.dataset.edit));
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>confirmDelete('match',b.dataset.del));
@@ -605,7 +661,7 @@ function renderPlayers(el){
       </tr></thead>
       <tbody>${stats.map((p,i)=>`
         <tr data-player="${esc(p.name)}">
-          <td><div class="rankcell"><span class="rankno ${i===0?'top':''}">${i+1}</span><span class="pname">${esc(p.name)}</span></div></td>
+          <td><div class="rankcell"><span class="rankno ${i===0?'top':''}">${i+1}</span>${avatar(p.name,30)}<span class="pname">${esc(p.name)}</span></div></td>
           <td class="n num">${p.played}</td>
           <td class="n num" style="color:var(--win);font-weight:800">${p.won}</td>
           <td class="n num" style="color:var(--danger)">${p.lost}</td>
@@ -756,21 +812,48 @@ function openTournamentModal(id){
         <div class="field"><label>Start date <span style="text-transform:none;color:var(--muted)">(optional)</span></label><input id="tDate" type="date" value="${t?(t.start_date||''):''}"></div>
         <div class="field"><label>Status</label><select id="tStatus"><option value="active" ${t&&t.status==='active'?'selected':''}>Active</option><option value="completed" ${t&&t.status==='completed'?'selected':''}>Completed</option></select></div>
       </div>
+      <div class="field"><label>Banner image <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
+        <div class="uploader"><div class="thumb" id="bThumb">${t&&t.banner_url?`<img src="${esc(t.banner_url)}">`:'🏞️'}</div>
+          <div class="ubtns"><button type="button" class="btn sm" id="bPick">Choose image</button><button type="button" class="btn sm ghost danger" id="bClear" ${t&&t.banner_url?'':'hidden'}>Remove</button></div>
+        </div>
+      </div>
+      <div class="field"><label>Match schedule image <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
+        <div class="uploader"><div class="thumb" id="sThumb">${t&&t.schedule_url?`<img src="${esc(t.schedule_url)}">`:'📋'}</div>
+          <div class="ubtns"><button type="button" class="btn sm" id="sPick">Choose image</button><button type="button" class="btn sm ghost danger" id="sClear" ${t&&t.schedule_url?'':'hidden'}>Remove</button></div>
+        </div>
+        <div class="hint">Upload the poster so everyone can view the full schedule.</div>
+      </div>
       <div class="modal-foot">
         <button class="btn" data-close>Cancel</button>
         <button class="btn primary" id="saveT">${t?'Save':'Create'}</button>
       </div>
     </div>`);
+  // pending image data URLs: null = unchanged if absent; '' marks removal; data:... marks new upload
+  let pendBanner = (t&&t.banner_url) || null, pendSchedule = (t&&t.schedule_url) || null;
+  const setThumb=(sel,val,ph)=>{ modalEl.querySelector(sel).innerHTML = val? `<img src="${val}">` : ph; };
+  modalEl.querySelector('#bPick').onclick=async()=>{ const f=await pickImage(); if(!f)return; try{ pendBanner=await resizeImage(f,1400,0.82,false); setThumb('#bThumb',pendBanner,'🏞️'); modalEl.querySelector('#bClear').hidden=false; }catch(e){ toast(e.message); } };
+  modalEl.querySelector('#bClear').onclick=()=>{ pendBanner=''; setThumb('#bThumb','','🏞️'); modalEl.querySelector('#bClear').hidden=true; };
+  modalEl.querySelector('#sPick').onclick=async()=>{ const f=await pickImage(); if(!f)return; try{ pendSchedule=await resizeImage(f,1600,0.85,false); setThumb('#sThumb',pendSchedule,'📋'); modalEl.querySelector('#sClear').hidden=false; }catch(e){ toast(e.message); } };
+  modalEl.querySelector('#sClear').onclick=()=>{ pendSchedule=''; setThumb('#sThumb','','📋'); modalEl.querySelector('#sClear').hidden=true; };
   modalEl.querySelector('#saveT').onclick=async()=>{
     const name=modalEl.querySelector('#tName').value.trim();
     const err=modalEl.querySelector('#tErr');
     if(!name){ err.textContent='Give the tournament a name.'; err.classList.add('show'); return; }
     const patch={ name, edition:modalEl.querySelector('#tEd').value.trim()||null, start_date:modalEl.querySelector('#tDate').value||null, status:modalEl.querySelector('#tStatus').value };
+    const btn=modalEl.querySelector('#saveT'); btn.disabled=true; btn.textContent='Saving…';
     try{
+      let tid=id;
       if(t){ await store.updateTournament(id,patch); }
-      else { const nt=await store.addTournament(patch); await loadAll(); state.tournamentId=nt.id; closeModal(); state.tab='matches'; render(); toast('Tournament created'); return; }
-      closeModal(); await loadAll(); render(); toast('Tournament updated');
-    }catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); }
+      else { const nt=await store.addTournament(patch); tid=nt.id; }
+      const imgPatch={};
+      if(typeof pendBanner==='string' && pendBanner.startsWith('data:')) imgPatch.banner_url=await store.saveImage(pendBanner,`tournament/${tid}/banner.jpg`);
+      else if(pendBanner==='') imgPatch.banner_url=null;
+      if(typeof pendSchedule==='string' && pendSchedule.startsWith('data:')) imgPatch.schedule_url=await store.saveImage(pendSchedule,`tournament/${tid}/schedule.jpg`);
+      else if(pendSchedule==='') imgPatch.schedule_url=null;
+      if(Object.keys(imgPatch).length) await store.updateTournament(tid,imgPatch);
+      if(!t) state.tournamentId=tid;
+      closeModal(); await loadAll(); if(!t) state.tab='matches'; render(); toast(t?'Tournament updated':'Tournament created');
+    }catch(e){ err.textContent='Could not save: '+(e.message||e); err.classList.add('show'); btn.disabled=false; btn.textContent=t?'Save':'Create'; }
   };
 }
 
@@ -796,13 +879,20 @@ function confirmDelete(kind,id){
 }
 
 function openPlayerDetail(name, ms){
-  const stats=computeStats(ms).find(p=>p.name===name);
-  if(!stats){ return; }
+  const stats=computeStats(ms).find(p=>p.name===name) || { name, played:0, won:0, lost:0, pf:0, pa:0, diff:0, pct:0, partners:{}, matches:[] };
   const partners=Object.entries(stats.partners).map(([n,v])=>({n,...v,pct:v.g?v.w/v.g:0})).sort((a,b)=>b.w-a.w||b.pct-a.pct);
   const hist=stats.matches.slice().sort((a,b)=>(b.m.match_no||0)-(a.m.match_no||0));
+  const hasPic=!!(state.players[name]&&state.players[name].avatar_url);
   openModal(`
     <div class="modal-head"><h3>${esc(name)}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        ${avatar(name,58)}
+        <div class="ubtns">
+          <button class="btn sm" id="pdPhoto">${I.plus}${hasPic?'Change photo':'Upload photo'}</button>
+          ${hasPic?`<button class="btn sm ghost danger" id="pdPhotoRm">Remove</button>`:''}
+        </div>
+      </div>
       <div class="pd-stats">
         <div class="pd-stat"><div class="v num">${stats.played}</div><div class="k">Played</div></div>
         <div class="pd-stat"><div class="v num" style="color:var(--win)">${stats.won}</div><div class="k">Won</div></div>
@@ -818,6 +908,19 @@ function openPlayerDetail(name, ms){
         <span class="mscore">${h.mine}–${h.theirs}</span>
       </li>`).join('')}</ul>
     </div>`);
+  modalEl.querySelector('#pdPhoto').onclick=async()=>{
+    const f=await pickImage(); if(!f) return;
+    const btn=modalEl.querySelector('#pdPhoto'); btn.textContent='Uploading…'; btn.disabled=true;
+    try{
+      const data=await resizeImage(f,320,0.82,true);
+      const url=await store.saveImage(data,`player/${encodeURIComponent(name)}.jpg`);
+      await store.setPlayerAvatar(name,url);
+      await loadAll(); render(); openPlayerDetail(name, scopedMatches()); toast('Photo saved');
+    }catch(e){ toast(e.message||'Upload failed'); btn.textContent='Upload photo'; btn.disabled=false; }
+  };
+  modalEl.querySelector('#pdPhotoRm')?.addEventListener('click',async()=>{
+    try{ await store.setPlayerAvatar(name,null); await loadAll(); render(); openPlayerDetail(name, scopedMatches()); toast('Photo removed'); }catch(e){ toast('Could not remove'); }
+  });
 }
 function oppOf(m,name){
   const inA=[m.team1_p1,m.team1_p2].includes(name);
