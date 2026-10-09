@@ -1,16 +1,15 @@
 # 🏸 Badminton Tracker
 
-**Live:** https://nehagarg4.github.io/badminton-tracker/
+**Live:** https://jcc-badminton.netlify.app
 
 Free match-score, standings & player-analytics website for the JCC Badminton Series
 (and any future tournaments).
 
 - **One file** — `index.html`, plain HTML/JS, no build step.
-- **Supabase** (free tier) — shared database, so scores sync across everyone's phones.
-- **GitHub Pages** (free) — hosting. Auto-deploys on every `git push` to `main`.
+- **Supabase** (free tier) — shared database, so scores, photos & schedules sync across everyone's phones. **Already connected.**
+- **Netlify** (free tier) — hosting, repo `nehagarg4/badminton-tracker`. Auto-deploys on every `git push` to `main`.
 
-It's **already live** and usable (data saves in your browser only, "on-device mode").
-Do the one Supabase step below when you want everyone to see the same live data.
+It's **live and connected** — everyone who opens the link sees the same shared data.
 
 ---
 
