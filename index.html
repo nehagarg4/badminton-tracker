@@ -536,26 +536,25 @@ function getUser(){ try{ return (localStorage.getItem(USER_KEY)||'').trim(); }ca
 function setUser(n){ try{ localStorage.setItem(USER_KEY,(n||'').trim()); }catch(e){} }
 const stampBy = () => ({ updated_by:actor()||null, updated_at:nowISO() });
 
-/* ---------- admin auth (Supabase) ----------
-   Authentication = Supabase Auth (login). Authorisation = the `admins`
-   table (email + is_super). You can edit only if your signed-in email is
-   in that table; super-admins manage the table in-app. ---------------- */
-let adminSession=null, adminsList=[];
-// usernames map to a synthetic email so Supabase (email auth) works without real emails
-const loginId=id=>{ id=(id||'').trim().toLowerCase(); return id.includes('@')? id : (id+'@jcc.local'); };
-const dispUser=e=>String(e||'').replace(/@jcc\.local$/i,'');
-const isAuthed=()=>!!adminSession;
-const userEmail=()=> ((adminSession&&adminSession.user&&adminSession.user.email)||'').toLowerCase();
-function isAdmin(){ return isAuthed() && adminsList.some(a=>(a.email||'').toLowerCase()===userEmail()); }
-function isSuper(){ return isAuthed() && adminsList.some(a=>(a.email||'').toLowerCase()===userEmail() && a.is_super); }
-function adminName(){ const e=adminSession&&adminSession.user&&adminSession.user.email; return e? e.split('@')[0] : null; }
-function actor(){ return isAdmin() ? (adminName()||'admin') : (getUser()||null); }   // who did an action
-async function loadAdmins(){ if(!useDB||!isAuthed()){ adminsList=[]; return; } try{ const {data}=await sb.from('admins').select('*').order('created_at'); adminsList=data||[]; }catch(e){ adminsList=[]; } }
-async function initAuth(){ if(!useDB||!sb||!sb.auth) return; try{ const {data}=await sb.auth.getSession(); adminSession=(data&&data.session)||null; await loadAdmins();
-  sb.auth.onAuthStateChange(async(_e,s)=>{ const wasAdmin=isAdmin(); adminSession=s||null; await loadAdmins(); renderUserPill(); render();
-    if(!wasAdmin&&isAdmin()) toast('Signed in as admin'); else if(wasAdmin&&!isAuthed()) toast('Signed out'); }); }catch(e){} }
+/* ---------- admin login (built-in, no Supabase Auth) ----------
+   Credentials live in the app_users table; app_login / app_set_user /
+   app_remove_user are SECURITY DEFINER functions (passwords never reach
+   the browser). Login unlocks editing in the UI; the session lives in
+   sessionStorage. Super-admins mark players as admins. ---------------- */
+let session=(()=>{ try{ return JSON.parse(sessionStorage.getItem('bad_session')||'null'); }catch(e){ return null; } })();
+function saveSession(){ try{ if(session) sessionStorage.setItem('bad_session',JSON.stringify(session)); else sessionStorage.removeItem('bad_session'); }catch(e){} }
+const isAdmin=()=> !!(session && session.is_admin);
+const isSuper=()=> !!(session && session.is_super);
+const adminName=()=> session ? session.username : null;
+function actor(){ return isAdmin() ? session.username : (getUser()||null); }   // who did an action
+async function adminLogin(username,password){ if(!useDB||!sb) return {ok:false,err:'offline'};
+  try{ const {data,error}=await sb.rpc('app_login',{u:username,p:password}); if(error) return {ok:false,err:error.message};
+    if(data&&data.ok){ session={username:data.username, is_admin:data.is_admin, is_super:data.is_super, pw:password}; saveSession(); } return data||{ok:false}; }
+  catch(e){ return {ok:false,err:e.message}; } }
+function adminLogout(){ session=null; saveSession(); location.hash=''; render(); }
+async function initAuth(){ return; }   // session restored from sessionStorage above
 // editing is admin-only in live mode; on-device (?local) mode has no backend, so allow
-function requireAdmin(){ if(!useDB || isAdmin()) return true; toast(isAuthed()?'You are not an admin':'Admin login required'); location.hash='#admin'; render(); return false; }
+function requireAdmin(){ if(!useDB || isAdmin()) return true; toast('Admin login required'); location.hash='#admin'; render(); return false; }
 function relTime(iso){ if(!iso) return ''; const s=Math.max(0,(Date.now()-new Date(iso).getTime())/1000);
   if(s<45) return 'just now'; if(s<90) return '1m ago';
   const m=s/60; if(m<60) return Math.round(m)+'m ago';
@@ -1031,77 +1030,79 @@ function render(){
 
 /* ---- Admin (/admin or #admin) ---- */
 function renderAdmin(el){
-  const back=`<button class="btn sm" id="adBack">${isAuthed()?'Back to app':'Back'}</button>`;
-  if(!useDB){ el.innerHTML=`<div class="wrap"><div class="set-wrap"><div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div><div class="set-card"><p class="subtle">Admin sign-in needs the live site (Supabase). You're in on-device mode.</p></div></div></div>`; el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); }; return; }
+  const back=`<button class="btn sm" id="adBack">${isAdmin()?'Back to app':'Back'}</button>`;
+  if(!useDB){ el.innerHTML=`<div class="wrap"><div class="set-wrap"><div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div><div class="set-card"><p class="subtle">Admin login needs the live site (Supabase). You're in on-device mode.</p></div></div></div>`; el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); }; return; }
 
-  if(!isAuthed()){
+  if(!isAdmin()){
     el.innerHTML=`<div class="wrap"><div class="set-wrap" style="max-width:440px">
       <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
       <div class="set-card"><h2>Sign in</h2>
         <div class="err" id="adErr"></div>
-        <div class="field"><label>Username</label><input id="adEmail" type="text" autocomplete="username" placeholder="username"></div>
-        <div class="field"><label>Password</label><input id="adPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
+        <div id="adPick"><p class="subtle">Loading…</p></div>
+        <div class="field" style="margin-top:14px"><label>Password</label><input id="adPass" type="password" autocomplete="current-password" placeholder="••••••••"></div>
         <div class="modal-foot"><button class="btn primary" id="adGo" style="flex:1;justify-content:center">Sign in</button></div>
-        <div class="hint" style="margin-top:12px">Accounts are created in Supabase → Authentication → Add user (tick "Auto Confirm" — no email sent). You can use a username or an email.</div>
       </div></div></div>`;
     el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
-    const go=async()=>{ const id=(el.querySelector('#adEmail').value||'').trim(), password=el.querySelector('#adPass').value||''; const err=el.querySelector('#adErr');
-      if(!id||!password){ err.textContent='Enter username and password.'; err.classList.add('show'); return; }
-      const email=loginId(id);
+    (async()=>{ let names=[]; try{ const {data}=await sb.rpc('app_admin_names'); names=Array.isArray(data)?data:[]; }catch(e){}
+      const box=el.querySelector('#adPick'); if(!box) return;
+      if(!names.length){ box.innerHTML=`<div class="field"><label>Username</label><input id="adUser" type="text" placeholder="username"></div><div class="hint">No admins set up yet — run migrate10.sql (it creates the first super-admin).</div>`; return; }
+      box.innerHTML=`<div class="field"><label>Who are you?</label>
+        <div style="display:flex;align-items:center;gap:12px"><span id="adAv">${avatar(names[0],44)}</span>
+        <select id="adUser" style="flex:1">${names.map(n=>`<option>${esc(n)}</option>`).join('')}</select></div></div>`;
+      const sel=box.querySelector('#adUser'); sel.onchange=()=>{ box.querySelector('#adAv').innerHTML=avatar(sel.value,44); };
+      setTimeout(()=>el.querySelector('#adPass').focus(),60);
+    })();
+    const go=async()=>{ const u=(el.querySelector('#adUser')?.value||'').trim(), p=el.querySelector('#adPass').value||''; const err=el.querySelector('#adErr');
+      if(!u||!p){ err.textContent='Pick your name and enter your password.'; err.classList.add('show'); return; }
       const btn=el.querySelector('#adGo'); btn.disabled=true; btn.textContent='Signing in…';
-      const {error}=await sb.auth.signInWithPassword({email,password});
-      if(error){ err.textContent=error.message||'Could not sign in.'; err.classList.add('show'); btn.disabled=false; btn.textContent='Sign in'; store._audit('admin.login_failed',{email}); return; }
-      store._audit('admin.login',{email}); };
+      const res=await adminLogin(u,p);
+      if(!res.ok){ err.textContent='Wrong username or password.'; err.classList.add('show'); btn.disabled=false; btn.textContent='Sign in'; store._audit('login_failed',{username:u}); return; }
+      store._audit('login',{username:u}); render(); };
     el.querySelector('#adGo').onclick=go;
     el.querySelector('#adPass').addEventListener('keydown',e=>{ if(e.key==='Enter') go(); });
-    setTimeout(()=>el.querySelector('#adEmail').focus(),60);
-    return;
-  }
-
-  if(!isAdmin()){
-    el.innerHTML=`<div class="wrap"><div class="set-wrap" style="max-width:480px">
-      <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
-      <div class="set-card"><h2>Not an admin</h2>
-        <p class="subtle" style="font-size:14px">You're signed in as <b style="color:var(--text)">${esc(dispUser(userEmail()))}</b>, but this account isn't an admin, so editing stays read-only. Ask a super-admin to add you.</p>
-        <div class="modal-foot" style="margin-top:14px"><button class="btn danger" id="adLogout" style="flex:none">Log out</button></div>
-      </div></div></div>`;
-    el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
-    el.querySelector('#adLogout').onclick=async()=>{ await sb.auth.signOut(); };
     return;
   }
 
   el.innerHTML=`<div class="wrap"><div class="set-wrap">
     <div class="sectionhead"><h2>Admin</h2><div class="spacer"></div>${back}</div>
-    <div class="set-card"><div class="set-row"><div class="sr-main"><div class="t">Signed in${isSuper()?' as super-admin':' as admin'}</div><div class="d">${esc(dispUser(adminSession.user.email||''))}</div></div><button class="btn sm danger" id="adLogout" style="flex:none">Log out</button></div></div>
-    ${isSuper()?`<div class="set-card"><h2>Admins <span class="captag">Super</span></h2>
-      <div id="adminsBox">${adminsList.map(a=>`<div class="set-row" style="padding:9px 0;border-bottom:1px solid var(--border)">
-        <div class="sr-main"><div class="t">${esc(dispUser(a.email))}${a.is_super?' <span class="captag">super</span>':''}</div></div>
-        ${(a.email||'').toLowerCase()===userEmail()?'<span class="subtle">you</span>':`<button class="btn sm ghost danger adRm" data-email="${esc(a.email)}" style="flex:none">Remove</button>`}
-      </div>`).join('')}</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
-        <input id="adNewEmail" type="text" placeholder="username" style="flex:1;min-width:180px;padding:11px 13px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)">
-        <label class="subtle" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="adNewSuper"> super</label>
-        <button class="btn sm primary" id="adAdd" style="flex:none">Add</button>
-      </div>
-      <div class="hint" style="margin-top:8px">Adding a username grants edit rights. Create their login in Supabase → Authentication → Add user (email = <b>username@jcc.local</b>, tick "Auto Confirm" — no email sent).</div>
-    </div>`:''}
+    <div class="set-card"><div class="set-row">${avatar(session.username,44)}<div class="sr-main"><div class="t">${esc(session.username)}</div><div class="d">${isSuper()?'Super-admin':'Admin'} · you can record &amp; edit results</div></div><button class="btn sm danger" id="adLogout" style="flex:none">Log out</button></div></div>
+    ${isSuper()?`<div class="set-card"><h2>Manage access <span class="captag">Super</span></h2><div id="adMgr"><p class="subtle">Loading…</p></div></div>`:''}
     <div class="set-card danger"><h2>Danger zone</h2>
-      <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept. Cannot be undone.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
+      <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
     </div>
     <div class="set-card"><h2>Activity log</h2><div id="adLog"><p class="subtle">Loading…</p></div></div>
   </div></div>`;
   el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
-  el.querySelector('#adLogout').onclick=async()=>{ store._audit('admin.logout',{}); await sb.auth.signOut(); };
+  el.querySelector('#adLogout').onclick=()=>{ store._audit('logout',{username:session.username}); adminLogout(); };
   el.querySelector('#adReset').onclick=async()=>{ const t=curTournament(); if(!t) return; if(!confirm(`Reset scores for all ${tournamentMatches().length} matches in "${t.name}"? Cannot be undone.`)) return; try{ for(const m of tournamentMatches()) await store.updateMatch(m.id,{games:[],score1:null,score2:null,status:'scheduled'}); await loadAll(); toast('Scores reset'); renderAdmin(el); }catch(e){ toast('Could not reset'); } };
-  el.querySelectorAll('.adRm').forEach(b=>b.onclick=async()=>{ const email=b.dataset.email; if(!confirm(`Remove admin ${email}?`)) return; try{ const {error}=await sb.from('admins').delete().eq('email',email); if(error)throw error; store._audit('admin.remove',{email}); await loadAdmins(); renderAdmin(el); toast('Admin removed'); }catch(e){ toast('Could not remove: '+(e.message||e)); } });
-  el.querySelector('#adAdd')?.addEventListener('click',async()=>{ const raw=(el.querySelector('#adNewEmail').value||'').trim(); const sup=el.querySelector('#adNewSuper').checked;
-    if(!raw){ toast('Enter a username'); return; } const email=loginId(raw);
-    try{ const {error}=await sb.from('admins').insert({email, is_super:sup, added_by:userEmail()}); if(error)throw error; store._audit('admin.add',{email,super:sup}); await loadAdmins(); renderAdmin(el); toast('Admin added'); }catch(e){ toast('Could not add: '+(e.message||e)); } });
+  if(isSuper()) renderAccessMgr(el.querySelector('#adMgr'));
   (async()=>{ const box=el.querySelector('#adLog'); try{ const {data,error}=await sb.from('audit_log').select('*').order('created_at',{ascending:false}).limit(150);
-    if(error){ box.innerHTML=`<p class="subtle">Could not load the log (${esc(error.message)}). Run migrate9.sql.</p>`; return; }
+    if(error){ box.innerHTML=`<p class="subtle">Could not load the log (${esc(error.message)}). Run migrate10.sql.</p>`; return; }
     if(!data||!data.length){ box.innerHTML='<p class="subtle">No activity recorded yet.</p>'; return; }
     box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${data.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
   }catch(e){ box.innerHTML='<p class="subtle">Could not load the log.</p>'; } })();
+}
+async function renderAccessMgr(box){
+  if(!box) return;
+  let users=[]; try{ const {data}=await sb.rpc('app_list_users',{su:session.username,sp:session.pw}); if(data&&data.ok) users=data.users||[]; }catch(e){}
+  const players=Object.keys(state.players).sort((a,b)=>a.localeCompare(b));
+  box.innerHTML=`
+    <div id="usersBox">${users.length?users.map(u=>`<div class="set-row" style="padding:8px 0;border-bottom:1px solid var(--border)">
+      <div class="sr-main" style="display:flex;align-items:center;gap:10px">${avatar(u.username,30)}<div><div class="t">${esc(u.username)}${u.is_super?' <span class="captag">super</span>':''}</div></div></div>
+      ${u.username.toLowerCase()===session.username.toLowerCase()?'<span class="subtle">you</span>':`<button class="btn sm ghost danger uRm" data-u="${esc(u.username)}" style="flex:none">Remove</button>`}
+    </div>`).join(''):'<p class="subtle">No admins yet.</p>'}</div>
+    <div class="hint" style="margin:14px 0 8px">Make a player an admin — pick them and set a password. (Blank password on an existing admin just toggles super.)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select id="uName" style="flex:1;min-width:150px">${players.map(n=>`<option>${esc(n)}</option>`).join('')}</select>
+      <input id="uPass" type="text" placeholder="password" style="flex:1;min-width:120px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--surface);color:var(--text)">
+      <label class="subtle" style="display:flex;align-items:center;gap:6px;white-space:nowrap"><input type="checkbox" id="uSuper"> super</label>
+      <button class="btn sm primary" id="uSave" style="flex:none">Save</button>
+    </div>`;
+  box.querySelectorAll('.uRm').forEach(b=>b.onclick=async()=>{ if(!confirm(`Remove admin ${b.dataset.u}?`)) return;
+    try{ const {data}=await sb.rpc('app_remove_user',{su:session.username,sp:session.pw,target:b.dataset.u}); if(data&&data.ok){ store._audit('admin.remove',{username:b.dataset.u}); renderAccessMgr(box); toast('Removed'); } else toast('Could not remove'); }catch(e){ toast('Could not remove'); } });
+  box.querySelector('#uSave').onclick=async()=>{ const name=box.querySelector('#uName').value; const pass=box.querySelector('#uPass').value||''; const sup=box.querySelector('#uSuper').checked;
+    if(!name){ toast('Pick a name'); return; }
+    try{ const {data}=await sb.rpc('app_set_user',{su:session.username,sp:session.pw,target:name,pass:pass,admin:true,super:sup}); if(data&&data.ok){ store._audit('admin.set',{username:name,super:sup}); box.querySelector('#uPass').value=''; renderAccessMgr(box); toast('Saved'); } else toast((data&&data.err)||'Could not save'); }catch(e){ toast('Could not save'); } };
 }
 
 /* ---- Settings ---- */
