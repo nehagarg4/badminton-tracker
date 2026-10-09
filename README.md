@@ -1,6 +1,6 @@
-# 🏸 Badminton Tracker
+# 🏸 JCC Badminton Tournament Tracker
 
-**Live:** https://nehagarg4.github.io/badminton-tracker/
+**Live:** https://jcc-badminton.pages.dev (also https://nehagarg4.github.io/badminton-tracker/)
 
 Free match-score, standings, teams & player-analytics website for the JCC Badminton
 Series (and any future tournaments).
