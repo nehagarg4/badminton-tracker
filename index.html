@@ -344,10 +344,10 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .lightbox .lbx:hover{background:rgba(255,255,255,.28)}
 
 /* team chips + player links */
-.tchip{display:inline-flex;align-items:center;gap:6px;font-family:var(--head);font-size:12px;font-weight:700;letter-spacing:.5px;padding:4px 11px;border-radius:7px;background:var(--tcbg);color:var(--tc);white-space:nowrap;max-width:100%;cursor:pointer;text-transform:uppercase}
+.tchip{display:inline-flex;align-items:center;gap:7px;font-family:var(--head);font-size:12px;font-weight:700;letter-spacing:.5px;padding:3px 12px 3px 4px;border-radius:999px;background:var(--tcbg);color:var(--tc);white-space:nowrap;max-width:100%;cursor:pointer;text-transform:uppercase}
 .tchip[data-teamnav]:hover{filter:brightness(1.15)}
-.tchip i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.tchip .tci{width:16px;height:16px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#000;display:inline-flex}
+.tchip i{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-left:5px}
+.tchip .tci{width:26px;height:26px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#000;display:inline-flex;border:1.5px solid var(--tc)}
 .tchip .tci img{width:100%;height:100%;object-fit:cover}
 .tbadge{display:inline-flex;align-items:center;justify-content:center;border-radius:12px;overflow:hidden;flex-shrink:0;vertical-align:middle;
   border:2px solid var(--muted);background:#000;font-family:var(--disp);line-height:1}
@@ -405,6 +405,19 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .sfrow select option{background:#0C1324}
 .sfrow .sfbo{width:110px} .sfrow .sfpts{width:88px} .sfrow .sfdel{width:34px;height:34px;flex-shrink:0}
 @media(max-width:460px){.sfrow{flex-wrap:wrap}.sfrow .sfname{flex-basis:100%}.sfrow .sfbo,.sfrow .sfpts{flex:1}}
+/* top-3 players podium */
+.podium{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;align-items:end}
+.pod{display:flex;flex-direction:column;align-items:center;gap:7px;padding:18px 12px;border-radius:16px;background:var(--surface);border:1px solid var(--border);text-align:center;cursor:pointer;transition:.12s}
+.pod:hover{background:var(--surface2);border-color:var(--border2);transform:translateY(-2px)}
+.pod.first{background:linear-gradient(180deg,var(--accent-bg),var(--surface));border-color:var(--accent-bd);padding-top:26px}
+.pod .medal{font-family:var(--disp);width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:15px;color:#0A0E1A}
+.pod.p1 .medal{background:#F5C518} .pod.p2 .medal{background:#C7CEDA} .pod.p3 .medal{background:#E0870F;color:#fff}
+.pod.p1 .av{border-color:#F5C518!important} .pod.p2 .av{border-color:#C7CEDA!important} .pod.p3 .av{border-color:#E0870F!important}
+.pod .av{border-width:3px!important}
+.pod .pn{font-weight:700;font-size:16px;line-height:1.1}
+.pod .rec{display:flex;gap:4px}
+.pod .pct{font-family:var(--disp);font-size:22px;color:var(--accent)}
+@media(max-width:520px){ .podium{gap:8px} .pod{padding:12px 6px;gap:5px} .pod.first{padding-top:16px} .pod .pn{font-size:13px} .pod .pct{font-size:18px} }
 /* legend + section colors for matches */
 .legend{display:flex;flex-wrap:wrap;gap:20px;margin-bottom:22px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm)}
 .legend span{display:flex;align-items:center;gap:8px;font-family:var(--head);font-weight:700;letter-spacing:1px;font-size:13px;text-transform:uppercase}
@@ -1208,7 +1221,9 @@ let playerSearch='';
 let playerSort={ col:'rank', dir:1 };
 function renderPlayers(el){
   const ms=scopedMatches();
-  const sMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
+  const ranked=computeStats(ms);
+  const sMap=Object.fromEntries(ranked.map(p=>[p.name,p]));
+  const top3=ranked.filter(p=>p.played>0).slice(0,3).map((p,i)=>({...p,place:i+1}));
   // Full roster: everyone in the (scoped) matches + anyone added directly.
   let roster=rosterNames(ms).map(n=>sMap[n]||zeroStats(n));
   const total=roster.length;
@@ -1233,6 +1248,17 @@ function renderPlayers(el){
         <button data-scope="all" class="${state.scope==='all'?'on':''}">All tournaments</button>
       </div>
     </div>
+    ${top3.length?`<div class="card pad" style="margin-bottom:16px">
+      <div class="card-title">${I.trophy}Top Players${state.scope==='all'?' · all tournaments':''}</div>
+      <div class="podium">${(top3.length>=3?[top3[1],top3[0],top3[2]]:top3).map(p=>`
+        <button class="pod p${p.place} ${p.place===1?'first':''}" data-player="${esc(p.name)}">
+          <div class="medal">${p.place}</div>
+          ${avatar(p.name,p.place===1?66:54)}
+          <div class="pn">${esc(p.name)}</div>
+          <div class="rec"><span class="pill w">${p.won}W</span><span class="pill l">${p.lost}L</span></div>
+          <div class="pct num">${Math.round(p.pct*100)}%</div>
+        </button>`).join('')}</div>
+    </div>`:''}
     ${capsAll.length?`<div class="card pad" style="margin-bottom:16px">
       <div class="card-title">${I.trophy}Captains · all tournaments</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
@@ -1282,6 +1308,7 @@ function renderPlayers(el){
   if(si){ si.oninput=()=>{ playerSearch=si.value; const pos=si.selectionStart; renderPlayers(el); const ns=el.querySelector('#playerSearch'); if(ns){ ns.focus(); try{ns.setSelectionRange(pos,pos);}catch(e){} } }; }
   el.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{ const c=th.dataset.sort; if(playerSort.col===c) playerSort.dir*=-1; else playerSort={col:c, dir:(c==='name'||c==='team')?1:-1}; renderPlayers(el); });
   el.querySelectorAll('#scopeSeg button').forEach(b=>b.onclick=()=>{ state.scope=b.dataset.scope; render(); });
+  el.querySelectorAll('.pod[data-player]').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
   el.querySelectorAll('tbody tr[data-player]').forEach(tr=>tr.onclick=()=>openPlayerDetail(tr.dataset.player, ms));
   el.querySelector('#addPlayerBtn')?.addEventListener('click',openAddPlayerModal);
   el.querySelector('#teamsBtn')?.addEventListener('click',()=>{ state.tab='teams'; render(); });
