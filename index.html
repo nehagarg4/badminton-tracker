@@ -1882,7 +1882,7 @@ function openScoreModal(id, prefillGames){
     <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="sErr"></div>
-      <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game, win by 2</p>
+      <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game (deuce at ${pts-1}–${pts-1}: win by 2)</p>
       <div class="gamegrid">
         <span></span>
         <div class="glbl a">${esc(team(m.team1_p1,m.team1_p2))}</div>
