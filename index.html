@@ -287,7 +287,8 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .lightbox .lbx:hover{background:rgba(255,255,255,.28)}
 
 /* team chips */
-.tchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:2px 9px;border-radius:999px;background:var(--tcbg);color:var(--tc);white-space:nowrap;max-width:100%}
+.tchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:2px 9px;border-radius:999px;background:var(--tcbg);color:var(--tc);white-space:nowrap;max-width:100%;cursor:pointer}
+.tchip[data-teamnav]:hover{filter:brightness(1.1)}
 .tchip i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .team .chips{display:flex;margin-bottom:4px;min-width:0}
 .team.b .chips{justify-content:flex-end}
@@ -328,9 +329,16 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .teamrow .tdel{width:32px;height:32px}
 /* teams page */
 .teamcard{overflow:hidden;padding:0}
-.teamcard-head{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface2);flex-wrap:wrap}
+.teamcard-head{display:flex;align-items:center;gap:10px;padding:14px 16px;background:var(--surface2);width:100%;text-align:left;cursor:pointer;border:0;color:inherit;flex-wrap:wrap;font:inherit}
+.teamcard-head:hover{filter:brightness(1.04)}
+.teamcard-head .chev{display:inline-flex;transition:transform .18s;color:var(--text2);flex-shrink:0}
+.teamcard-head .chev svg{width:18px;height:18px}
+.teamcard.open .teamcard-head .chev{transform:rotate(180deg)}
 .teamcard-head h3{font-size:16px;font-weight:800}
+.teamcard-head .thd-meta{margin-left:auto}
 .teamcard-body{padding:16px}
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+th.sortable:hover{color:var(--text)}
 .teamplayers{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:2px}
 .pdrow2{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:9px;text-align:left;width:100%}
 .pdrow2:hover{background:var(--surface2)}
@@ -627,7 +635,7 @@ function sideTeam(m, side){
   return ts.length===1 ? ts[0] : null;
 }
 function fixtureKey(m){ const a=sideTeam(m,1), b=sideTeam(m,2); return (a&&b) ? [a,b].sort().join(' ~|~ ') : '~other~'; }
-function teamChip(name){ if(!name) return ''; const c=teamColor(name); return `<span class="tchip" style="--tc:${c};--tcbg:${c}22"><i style="background:${c}"></i>${esc(name)}</span>`; }
+function teamChip(name){ if(!name) return ''; const c=teamColor(name); return `<span class="tchip" data-teamnav="${esc(name)}" title="Open ${esc(name)}" style="--tc:${c};--tcbg:${c}22"><i style="background:${c}"></i>${esc(name)}</span>`; }
 function computeTeamStats(ms){
   const T={}; const get=n=>(T[n]||(T[n]={name:n,played:0,won:0,lost:0,pf:0,pa:0}));
   ms.forEach(m=>{ const w=winnerOf(m); if(!w) return; const a=sideTeam(m,1), b=sideTeam(m,2); if(!a||!b||a===b) return;
@@ -697,6 +705,7 @@ const I = {
   upload:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>',
   cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>',
   shield:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+  chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>',
 };
 
 /* ================================================================
@@ -1032,11 +1041,25 @@ function openTeamsModal(){
 }
 
 /* ---- Teams ---- */
+const teamSlug = s => 'team-'+String(s).replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+let teamSort = { col:'rank', dir:1 };
+let teamExpanded = (()=>{ try{ return new Set(JSON.parse(localStorage.getItem('bad_team_open')||'[]')); }catch(e){ return new Set(); } })();
+const saveTeamExpanded = ()=>{ try{ localStorage.setItem('bad_team_open', JSON.stringify([...teamExpanded])); }catch(e){} };
+function gotoTeam(name){ state.tab='teams'; teamExpanded.add(name); saveTeamExpanded(); render(); setTimeout(()=>{ const n=document.getElementById(teamSlug(name)); if(n) n.scrollIntoView({behavior:'smooth',block:'start'}); },60); }
+
 function renderTeams(el){
   const ms=tournamentMatches();
   const tstats=computeTeamStats(ms);
   const pMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
   const tsFor=n=>tstats.find(x=>x.name===n)||{name:n,played:0,won:0,lost:0,pf:0,pa:0,diff:0,pct:0};
+  // sortable standings
+  let rows=state.teams.map(t=>({t,ts:tsFor(t.name),rank:tstats.findIndex(x=>x.name===t.name)}));
+  const {col,dir}=teamSort;
+  if(col==='rank') rows.sort((a,b)=>(a.rank<0?99:a.rank)-(b.rank<0?99:b.rank));
+  else if(col==='team') rows.sort((a,b)=>dir*a.t.name.localeCompare(b.t.name));
+  else rows.sort((a,b)=>dir*((a.ts[col]-b.ts[col])||0) || a.t.name.localeCompare(b.t.name));
+  const arrow=c=> teamSort.col===c ? (teamSort.dir<0?' ▾':' ▴') : '';
+  const sh=(c,label,extra)=>`<th class="sortable ${extra||''}" data-sort="${c}">${label}${arrow(c)}</th>`;
   el.innerHTML = `
     <div class="sectionhead"><h2>Teams</h2><div class="spacer"></div>
       <button class="btn sm" id="manageTeamsBtn">${I.shield}Manage teams</button>
@@ -1045,25 +1068,26 @@ function renderTeams(el){
     <div class="card pad" style="margin-bottom:18px">
       <div class="card-title">${I.trophy}Standings</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
-        <table><thead><tr><th>#&nbsp;&nbsp;Team</th><th class="n">P</th><th class="n">W</th><th class="n">L</th><th>Win %</th><th class="n">Pts&nbsp;Diff</th></tr></thead>
-        <tbody>${[...state.teams].map(t=>({t,ts:tsFor(t.name),rank:tstats.findIndex(x=>x.name===t.name)})).sort((a,b)=>(a.rank<0?99:a.rank)-(b.rank<0?99:b.rank)).map(({t,ts},i)=>`
-          <tr><td><div class="rankcell"><span class="rankno ${i===0&&ts.played?'top':''}">${ts.played?i+1:'·'}</span>${teamChip(t.name)}</div></td>
+        <table><thead><tr>${sh('rank','#')}${sh('team','Team')}${sh('played','P','n')}${sh('won','W','n')}${sh('lost','L','n')}${sh('pct','Win %')}${sh('diff','Pts Diff','n')}</tr></thead>
+        <tbody>${rows.map(({t,ts},i)=>`
+          <tr><td><div class="rankcell"><span class="rankno ${col==='rank'&&i===0&&ts.played?'top':''}">${(col==='rank')?(ts.played?i+1:'·'):i+1}</span>${teamChip(t.name)}</div></td>
             <td class="n num">${ts.played}</td><td class="n num" style="color:${ts.won?'var(--win)':'var(--muted)'};font-weight:800">${ts.won}</td>
             <td class="n num" style="color:${ts.lost?'var(--danger)':'var(--muted)'}">${ts.lost}</td>
             <td>${ts.played?`<span class="num" style="font-weight:800">${Math.round(ts.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td>
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>
-    ${state.teams.map(t=>{
-      const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>a.localeCompare(b));
+    ${rows.map(({t,ts})=>{
+      const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>(((pMap[b]||{won:0}).won)-((pMap[a]||{won:0}).won))||a.localeCompare(b));
       const tm=ms.filter(m=>sideTeam(m,1)===t.name||sideTeam(m,2)===t.name).sort((a,b)=>(a.match_no||0)-(b.match_no||0));
-      const ts=tsFor(t.name);
-      return `<div class="card teamcard" style="margin-bottom:16px">
-        <div class="teamcard-head" style="border-left:4px solid ${t.color}">
+      const open=teamExpanded.has(t.name);
+      return `<div class="card teamcard ${open?'open':''}" id="${teamSlug(t.name)}">
+        <button class="teamcard-head" data-toggle="${esc(t.name)}" style="border-left:4px solid ${t.color}">
+          <span class="chev">${I.chevron}</span>
           <h3>${esc(t.name)}</h3>
-          <span class="subtle">${players.length} player${players.length!==1?'s':''} · <b style="color:var(--text)">${ts.won}W–${ts.lost}L</b></span>
-        </div>
-        <div class="teamcard-body">
+          <span class="subtle thd-meta">${players.length} player${players.length!==1?'s':''} · <b style="color:var(--text)">${ts.won}W–${ts.lost}L</b></span>
+        </button>
+        <div class="teamcard-body" ${open?'':'hidden'}>
           <div class="card-title">Players</div>
           <div class="teamplayers">${players.length?players.map(n=>{const ps=pMap[n]||{won:0,lost:0};return `<button class="pdrow2" data-player="${esc(n)}">${avatar(n,32)}<span class="pname">${esc(n)}</span><span class="subtle num">${ps.won}W–${ps.lost}L</span></button>`;}).join(''):'<p class="subtle">No players assigned yet.</p>'}</div>
           <div class="card-title" style="margin-top:16px">Matches</div>
@@ -1083,6 +1107,8 @@ function renderTeams(el){
     }).join('')}`
     : emptyState('No teams yet','Create teams on the Players tab (Teams button), then assign players.',I.shield)}`;
   el.querySelector('#manageTeamsBtn')?.addEventListener('click',openTeamsModal);
+  el.querySelectorAll('th.sortable').forEach(th=>th.onclick=()=>{ const c=th.dataset.sort; if(teamSort.col===c) teamSort.dir*=-1; else teamSort={col:c, dir:(c==='team'?1:-1)}; renderTeams(el); });
+  el.querySelectorAll('.teamcard-head').forEach(h=>h.onclick=()=>{ const n=h.dataset.toggle; if(teamExpanded.has(n)) teamExpanded.delete(n); else teamExpanded.add(n); saveTeamExpanded(); renderTeams(el); });
   el.querySelectorAll('.pdrow2').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
   el.querySelectorAll('.tmrow').forEach(b=>b.onclick=()=>openScoreModal(b.dataset.score));
 }
@@ -1449,6 +1475,8 @@ setThemeIcon();
    ================================================================ */
 document.getElementById('tabs').addEventListener('click',e=>{ const b=e.target.closest('.tab'); if(!b)return; state.tab=b.dataset.tab; render(); });
 document.getElementById('tournamentSel').addEventListener('change',e=>{ state.tournamentId=e.target.value; render(); });
+// clicking any team chip opens the Teams page for that team (capture phase so it beats row handlers)
+document.addEventListener('click',e=>{ const c=e.target.closest&&e.target.closest('.tchip[data-teamnav]'); if(c){ e.preventDefault(); e.stopPropagation(); gotoTeam(c.getAttribute('data-teamnav')); } }, true);
 
 (async function start(){
   const pill=document.getElementById('connPill'), ct=document.getElementById('connText');
