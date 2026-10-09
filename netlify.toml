@@ -1,0 +1,10 @@
+# Static single-file site — no build step.
+[build]
+  publish = "."
+  command = ""
+
+# SPA-style: always serve index.html (harmless here; keeps deep links working).
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
