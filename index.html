@@ -1712,6 +1712,7 @@ document.addEventListener('click',e=>{ const p=e.target.closest&&e.target.closes
     await store.init();
     await loadAll();
     render();
+    if(!getUser()) setTimeout(()=>openUserModal(), 350);   // first visit: ask name up front
   }catch(e){
     document.querySelector('.wrap').innerHTML = `<div class="banner" style="background:var(--danger-bg);color:var(--danger)"><span>${I.flame}</span><div><b>Couldn't load data.</b> ${esc(e.message||e)}<br>Check your Supabase URL/key and that schema.sql has been run.</div></div>`;
   }
