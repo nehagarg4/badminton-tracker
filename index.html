@@ -135,6 +135,8 @@ a{color:var(--accent-ink)}
 .tile .k svg{width:15px;height:15px;color:var(--accent)}
 .tile .v{font-size:30px;font-weight:800;margin-top:7px;letter-spacing:-.02em}
 .tile .v small{font-size:14px;color:var(--text2);font-weight:700}
+.tile.clk{cursor:pointer;transition:.12s}
+.tile.clk:hover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-bg),var(--shadow);transform:translateY(-1px)}
 
 /* ---------- cards ---------- */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -802,6 +804,20 @@ function computeTeamStats(ms){
   arr.sort((a,b)=>b.won-a.won||b.pct-a.pct||b.diff-a.diff||a.name.localeCompare(b.name));
   return arr;
 }
+// Overall captain performance ACROSS ALL tournaments: each captain's teams' combined record.
+function computeCaptainsOverall(){
+  const byTour={}, agg={};
+  state.teams.forEach(tm=>{
+    const cap=tm.captain; if(!cap) return;
+    if(teamOfIn(tm.tournament_id,cap)!==tm.name) return;   // captain must be on that team in that tournament
+    if(!byTour[tm.tournament_id]) byTour[tm.tournament_id]=computeTeamStats(state.matches.filter(m=>m.tournament_id===tm.tournament_id));
+    const ts=byTour[tm.tournament_id].find(x=>x.name===tm.name)||{played:0,won:0,lost:0,pf:0,pa:0};
+    const a=agg[cap]||(agg[cap]={name:cap,tours:new Set(),played:0,won:0,lost:0,pf:0,pa:0});
+    a.tours.add(tm.tournament_id); a.played+=ts.played; a.won+=ts.won; a.lost+=ts.lost; a.pf+=ts.pf; a.pa+=ts.pa;
+  });
+  return Object.values(agg).map(a=>({name:a.name,tcount:a.tours.size,played:a.played,won:a.won,lost:a.lost,diff:a.pf-a.pa,pct:a.played?a.won/a.played:0}))
+    .sort((x,y)=>y.won-x.won||y.pct-x.pct||y.diff-x.diff||x.name.localeCompare(y.name));
+}
 // per-stage default format (best-of + points), configured on the tournament
 function stageFormat(t, stage){ const c=(t&&t.stage_config&&t.stage_config[stage])||null; return { best_of:(c&&c.best_of)||3, points:(c&&c.points)||21 }; }
 // a tournament's stages (ordered): defined in stage_config, plus any stage used by its matches, else the defaults
@@ -905,20 +921,20 @@ function renderDashboard(el){
   const leader=stats[0];
   const players=rosterNames(ms);
   const teamStats=computeTeamStats(ms);
-  const statsMap=Object.fromEntries(stats.map(p=>[p.name,p]));
-  const captains=curTeams().map(tm=>{ const cap=captainOf(tm.name); if(!cap) return null;
-    const tRank=teamStats.findIndex(x=>x.name===tm.name); const tS=teamStats.find(x=>x.name===tm.name)||{won:0,lost:0};
-    const pS=statsMap[cap]||{won:0,lost:0,played:0,pct:0}; return {team:tm.name,cap,tRank,tS,pS}; })
-    .filter(Boolean).sort((a,b)=>(a.tRank<0?99:a.tRank)-(b.tRank<0?99:b.tRank));
   const recent=done.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')||b.match_no-a.match_no).slice(0,5);
 
   el.innerHTML = `
-    ${t&&t.banner_url?`<div class="banner-hero"><img src="${esc(t.banner_url)}" alt=""><div class="cap"><h2>${esc(t.name)}</h2><div class="sub">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</div></div></div>`:''}
     <div class="sectionhead"><h2>${t?esc(t.name):'Dashboard'}</h2>
       <div class="spacer"></div>
       ${t?`<span class="subtle">${t.edition?esc(t.edition)+' · ':''}${ms.length} matches</span>`:''}
     </div>
     ${!useDB?`<div class="banner" id="dbBanner"><span>${I.flame}</span><div><b>On-device mode.</b> Scores save in this browser only. Add your free Supabase keys (see README) to sync across everyone's phones.</div><span class="x" onclick="this.parentElement.remove()">✕</span></div>`:''}
+    <div class="tiles">
+      <div class="tile clk" data-nav="players" title="View players"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
+      <div class="tile clk" data-nav="matches" title="View matches"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
+      <div class="tile clk" data-nav="matches" title="View matches"><div class="k">${I.clock}Pending</div><div class="v num">${ms.length-done.length}</div></div>
+      <div class="tile${leader?' clk':''}" ${leader?`data-player="${esc(leader.name)}" title="View ${esc(leader.name)}"`:''}><div class="k">${I.trophy}Leader</div><div class="v disp" style="font-size:${leader?'20px':'18px'}">${leader?esc(leader.name):'—'}</div>${leader?`<div class="subtle" style="margin-top:2px">${leader.won}W · ${leader.lost}L</div>`:''}</div>
+    </div>
     ${curTeams().length?`<div class="card pad" style="margin-bottom:16px">
       <div class="card-title">${I.shield}Team Standings</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
@@ -931,24 +947,6 @@ function renderDashboard(el){
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>`:''}
-    <div class="tiles">
-      <div class="tile"><div class="k">${I.users}Players</div><div class="v num">${players.length}</div></div>
-      <div class="tile"><div class="k">${I.check}Completed</div><div class="v num">${done.length} <small>/ ${ms.length}</small></div></div>
-      <div class="tile"><div class="k">${I.clock}Pending</div><div class="v num">${ms.length-done.length}</div></div>
-      <div class="tile"><div class="k">${I.trophy}Leader</div><div class="v disp" style="font-size:${leader?'20px':'18px'}">${leader?esc(leader.name):'—'}</div>${leader?`<div class="subtle" style="margin-top:2px">${leader.won}W · ${leader.lost}L</div>`:''}</div>
-    </div>
-    ${captains.length?`<div class="card pad" style="margin-bottom:16px">
-      <div class="card-title">${I.trophy}Captains</div>
-      <div class="tablewrap" style="box-shadow:none;border:none">
-        <table id="capTable"><thead><tr><th>Captain</th><th>Team</th><th class="n">Team&nbsp;W–L</th><th class="n">Own&nbsp;W–L</th><th>Own&nbsp;%</th></tr></thead>
-        <tbody>${captains.map(c=>`
-          <tr data-player="${esc(c.cap)}"><td><div class="rankcell">${avatar(c.cap,26)}<span class="pname">${esc(c.cap)}</span></div></td>
-            <td>${teamChip(c.team)}</td>
-            <td class="n num"><b style="color:${c.tS.won?'var(--win)':'inherit'}">${c.tS.won}</b>–${c.tS.lost}</td>
-            <td class="n num">${c.pS.played?`${c.pS.won}–${c.pS.lost}`:'<span class="subtle">—</span>'}</td>
-            <td>${c.pS.played?`<span class="num" style="font-weight:800">${Math.round(c.pS.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td></tr>`).join('')}</tbody></table>
-      </div>
-    </div>`:(curTeams().length?`<div class="card pad" style="margin-bottom:16px"><div class="card-title">${I.trophy}Captains</div><p class="subtle">No captains set yet. On the <b>Teams</b> tab, tap the ★ next to a player to make them captain.</p></div>`:'')}
     <div class="grid2">
       <div class="card pad">
         <div class="card-title">Top Players</div>
@@ -975,7 +973,8 @@ function renderDashboard(el){
       </div>
     </div>`;
   el.querySelectorAll('.pdrow').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
-  el.querySelectorAll('#capTable tbody tr[data-player]').forEach(r=>r.onclick=()=>openPlayerDetail(r.dataset.player, ms));
+  el.querySelectorAll('.tile[data-nav]').forEach(t=>t.onclick=()=>{ state.tab=t.dataset.nav; render(); });
+  el.querySelectorAll('.tile[data-player]').forEach(t=>t.onclick=()=>openPlayerDetail(t.dataset.player, ms));
 }
 function allPlayersInMatches(ms){ const s=new Set(); ms.forEach(m=>['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{if(m[k])s.add(m[k]);})); return [...s]; }
 
@@ -1248,6 +1247,7 @@ function gotoMatch(id){ const m=state.matches.find(x=>x.id===id); if(!m) return;
 function renderTeams(el){
   const ms=tournamentMatches();
   const tstats=computeTeamStats(ms);
+  const capsAll=computeCaptainsOverall();
   const pMap=Object.fromEntries(computeStats(ms).map(p=>[p.name,p]));
   const tsFor=n=>tstats.find(x=>x.name===n)||{name:n,played:0,won:0,lost:0,pf:0,pa:0,diff:0,pct:0};
   // sortable standings
@@ -1275,6 +1275,21 @@ function renderTeams(el){
             <td class="n">${ts.played?`<span class="pill diff ${ts.diff>0?'pos':ts.diff<0?'neg':''}">${ts.diff>0?'+':''}${ts.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
       </div>
     </div>
+    ${capsAll.length?`<div class="card pad" style="margin-bottom:18px">
+      <div class="card-title">${I.trophy}Captains · all tournaments</div>
+      <div class="tablewrap" style="box-shadow:none;border:none">
+        <table id="capAllTable"><thead><tr><th>Captain</th><th class="n">Tours</th><th class="n">P</th><th class="n">W</th><th class="n">L</th><th>Win %</th><th class="n">Pts Diff</th></tr></thead>
+        <tbody>${capsAll.map((c,i)=>`
+          <tr data-player="${esc(c.name)}"><td><div class="rankcell"><span class="rankno ${i===0&&c.played?'top':''}">${c.played?i+1:'·'}</span>${avatar(c.name,26)}<span class="pname">${esc(c.name)}</span></div></td>
+            <td class="n num">${c.tcount}</td>
+            <td class="n num">${c.played}</td>
+            <td class="n num" style="color:${c.won?'var(--win)':'var(--muted)'};font-weight:800">${c.won}</td>
+            <td class="n num" style="color:${c.lost?'var(--danger)':'var(--muted)'}">${c.lost}</td>
+            <td>${c.played?`<span class="num" style="font-weight:800">${Math.round(c.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td>
+            <td class="n">${c.played?`<span class="pill diff ${c.diff>0?'pos':c.diff<0?'neg':''}">${c.diff>0?'+':''}${c.diff}</span>`:''}</td></tr>`).join('')}</tbody></table>
+      </div>
+      <div class="hint" style="margin-top:8px">Combined record of each captain's team(s) across every tournament they've led.</div>
+    </div>`:''}
     ${rows.map(({t,ts})=>{
       const cap=captainOf(t.name);
       const players=Object.keys(state.players).filter(n=>teamOf(n)===t.name).sort((a,b)=>{ if(a===cap)return -1; if(b===cap)return 1; return (((pMap[b]||{won:0}).won)-((pMap[a]||{won:0}).won))||a.localeCompare(b); });
@@ -1310,6 +1325,7 @@ function renderTeams(el){
   el.querySelectorAll('.teamcard-head').forEach(h=>h.onclick=()=>{ const n=h.dataset.toggle; if(teamExpanded.has(n)) teamExpanded.delete(n); else teamExpanded.add(n); saveTeamExpanded(); renderTeams(el); });
   el.querySelectorAll('.capstar').forEach(s=>s.onclick=(e)=>{ e.stopPropagation(); e.preventDefault(); setCaptainFlow(s.dataset.team, s.dataset.cap); });
   el.querySelectorAll('.pdrow2').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
+  el.querySelectorAll('#capAllTable tbody tr[data-player]').forEach(r=>r.onclick=()=>openPlayerDetail(r.dataset.player, ms));
   el.querySelectorAll('.tmrow').forEach(b=>b.onclick=()=>gotoMatch(b.dataset.goto));
 }
 
@@ -1488,11 +1504,6 @@ function openTournamentModal(id){
       ${!t && state.tournaments.length ? `<div class="field"><label>Start teams &amp; roster from <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
         <select id="tCopy"><option value="">— Empty (set up fresh) —</option>${state.tournaments.map(x=>`<option value="${x.id}" ${x.id===state.tournamentId?'selected':''}>${esc(x.name)}${x.edition?' · '+esc(x.edition):''}</option>`).join('')}</select>
         <div class="hint">Copies that tournament's teams, player-to-team assignments and captains so you can tweak them here. Players themselves are shared across every tournament.</div></div>` : ''}
-      <div class="field"><label>Banner image <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
-        <div class="uploader"><div class="thumb" id="bThumb">${t&&t.banner_url?`<img src="${esc(t.banner_url)}">`:'🏞️'}</div>
-          <div class="ubtns"><button type="button" class="btn sm" id="bPick">Choose image</button><button type="button" class="btn sm ghost danger" id="bClear" ${t&&t.banner_url?'':'hidden'}>Remove</button></div>
-        </div>
-      </div>
       <div class="field"><label>Match schedule image <span style="text-transform:none;color:var(--muted)">(optional)</span></label>
         <div class="uploader"><div class="thumb" id="sThumb">${t&&t.schedule_url?`<img src="${esc(t.schedule_url)}">`:'📋'}</div>
           <div class="ubtns"><button type="button" class="btn sm" id="sPick">Choose image</button><button type="button" class="btn sm ghost danger" id="sClear" ${t&&t.schedule_url?'':'hidden'}>Remove</button></div>
@@ -1515,10 +1526,8 @@ function openTournamentModal(id){
       </div>
     </div>`);
   // pending image data URLs: null = unchanged if absent; '' marks removal; data:... marks new upload
-  let pendBanner = (t&&t.banner_url) || null, pendSchedule = (t&&t.schedule_url) || null;
+  let pendSchedule = (t&&t.schedule_url) || null;
   const setThumb=(sel,val,ph)=>{ modalEl.querySelector(sel).innerHTML = val? `<img src="${val}">` : ph; };
-  modalEl.querySelector('#bPick').onclick=async()=>{ const f=await pickImage(); if(!f)return; try{ pendBanner=await resizeImage(f,1400,0.82,false); setThumb('#bThumb',pendBanner,'🏞️'); modalEl.querySelector('#bClear').hidden=false; }catch(e){ toast(e.message); } };
-  modalEl.querySelector('#bClear').onclick=()=>{ pendBanner=''; setThumb('#bThumb','','🏞️'); modalEl.querySelector('#bClear').hidden=true; };
   modalEl.querySelector('#sPick').onclick=async()=>{ const f=await pickImage(); if(!f)return; try{ pendSchedule=await resizeImage(f,1600,0.85,false); setThumb('#sThumb',pendSchedule,'📋'); modalEl.querySelector('#sClear').hidden=false; }catch(e){ toast(e.message); } };
   modalEl.querySelector('#sClear').onclick=()=>{ pendSchedule=''; setThumb('#sThumb','','📋'); modalEl.querySelector('#sClear').hidden=true; };
   const matchesInStage = sName => state.matches.filter(m=>t && m.tournament_id===t.id && (m.stage||'League')===sName).length;
@@ -1560,8 +1569,6 @@ function openTournamentModal(id){
         const copyEl=modalEl.querySelector('#tCopy'); const copyFrom=copyEl?copyEl.value:'';
         if(copyFrom) await store.copyTeamsAndRosters(copyFrom, tid); }
       const imgPatch={};
-      if(typeof pendBanner==='string' && pendBanner.startsWith('data:')) imgPatch.banner_url=await store.saveImage(pendBanner,`tournament/${tid}/banner.jpg`);
-      else if(pendBanner==='') imgPatch.banner_url=null;
       if(typeof pendSchedule==='string' && pendSchedule.startsWith('data:')) imgPatch.schedule_url=await store.saveImage(pendSchedule,`tournament/${tid}/schedule.jpg`);
       else if(pendSchedule==='') imgPatch.schedule_url=null;
       if(Object.keys(imgPatch).length) await store.updateTournament(tid,imgPatch);
