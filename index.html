@@ -292,6 +292,11 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .pclick{cursor:pointer}
 .pclick:hover{text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1.5px}
 .psep{color:var(--muted);font-weight:600}
+.pclick.pav{display:inline-flex;align-items:center;gap:5px;vertical-align:middle;max-width:100%}
+.pclick.pav .av{flex-shrink:0}
+.pclick.pav:hover{text-decoration:none}
+.pclick.pav:hover .pn{text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1.5px}
+.players .psep{margin:0 3px}
 .tchip i{width:7px;height:7px;border-radius:50%;flex-shrink:0}
 .team .chips{display:flex;margin-bottom:4px;min-width:0}
 .team.b .chips{justify-content:flex-end}
@@ -646,6 +651,9 @@ function teamChip(name){ if(!name) return ''; const c=teamColor(name); return `<
 // clickable player name(s) — deep-link to the player's card
 function playerLink(n){ return n? `<span class="pclick" data-player="${esc(n)}">${esc(n)}</span>` : ''; }
 function playersLinked(p1,p2){ return [p1,p2].filter(Boolean).map(playerLink).join('<span class="psep"> / </span>'); }
+// clickable player with avatar + name (for match rows)
+function playerAvLink(n,size){ return n? `<span class="pclick pav" data-player="${esc(n)}">${avatar(n,size||22)}<span class="pn">${esc(n)}</span></span>` : ''; }
+function playersAv(p1,p2){ return [p1,p2].filter(Boolean).map(n=>playerAvLink(n)).join('<span class="psep">/</span>'); }
 function computeTeamStats(ms){
   const T={}; const get=n=>(T[n]||(T[n]={name:n,played:0,won:0,lost:0,pf:0,pa:0}));
   ms.forEach(m=>{ const w=winnerOf(m); if(!w) return; const a=sideTeam(m,1), b=sideTeam(m,2); if(!a||!b||a===b) return;
@@ -870,7 +878,7 @@ function matchRow(m){
     <div class="teams">
       <div class="team a ${w===1?'win':''}">
         <div class="chips">${ta?teamChip(ta):'<span class="tag">Team A</span>'}</div>
-        <div class="players">${playersLinked(m.team1_p1,m.team1_p2)}</div>
+        <div class="players">${playersAv(m.team1_p1,m.team1_p2)}</div>
         ${w===1?`<span class="wlabel">${I.check}Won</span>`:''}
       </div>
       <div class="score">
@@ -879,7 +887,7 @@ function matchRow(m){
       </div>
       <div class="team b ${w===2?'win':''}">
         <div class="chips" style="justify-content:flex-end">${tb?teamChip(tb):'<span class="tag">Team B</span>'}</div>
-        <div class="players">${playersLinked(m.team2_p1,m.team2_p2)}</div>
+        <div class="players">${playersAv(m.team2_p1,m.team2_p2)}</div>
         ${w===2?`<span class="wlabel" style="justify-content:flex-end">${I.check}Won</span>`:''}
       </div>
     </div>
