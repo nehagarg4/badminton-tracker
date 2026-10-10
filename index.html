@@ -1139,7 +1139,7 @@ function renderAdmin(el){
     ${canReset?`<div class="set-card danger"><h2>Danger zone</h2>
       <div class="set-row"><div class="sr-main"><div class="d" style="max-width:440px">Reset all recorded scores for <b>${curTournament()?esc(curTournament().name):'the current tournament'}</b>. Players &amp; teams are kept.</div></div><button class="btn sm danger" id="adReset" style="flex:none">Reset scores</button></div>
     </div>`:''}
-    ${isSuper()?`<div class="set-card"><h2>Activity log <span class="captag">Super</span></h2><div id="adLog"><p class="subtle">Loading…</p></div></div>`:''}
+    ${isSuper()?`<div class="set-card"><h2>Activity log <span class="captag">Super</span></h2><div id="adLog" style="max-height:380px;overflow:auto;border-radius:10px"><p class="subtle">Loading…</p></div></div>`:''}
   </div></div>`;
   el.querySelector('#adBack').onclick=()=>{ location.hash=''; render(); };
   el.querySelector('#adLogout').onclick=()=>{ store._audit('logout',{username:session.username}); adminLogout(); };
@@ -1149,7 +1149,7 @@ function renderAdmin(el){
     if(error||!data||!data.ok){ box.innerHTML=`<p class="subtle">Could not load the log${error?' ('+esc(error.message)+')':''}. Run the latest migration (migrate13.sql).</p>`; return; }
     const rows=data.rows||[];
     if(!rows.length){ box.innerHTML='<p class="subtle">No activity recorded yet.</p>'; return; }
-    box.innerHTML=`<div class="tablewrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>${rows.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
+    box.innerHTML=`<div class="tablewrap" style="box-shadow:none;border:none"><table><thead><tr>${['When','Who','Action','Detail'].map(h=>`<th style="position:sticky;top:0;background:var(--surface);z-index:1">${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr><td style="white-space:nowrap">${esc(new Date(r.created_at).toLocaleString())}</td><td>${esc(r.actor||'—')}</td><td><span class="tmstage">${esc(r.action)}</span></td><td class="subtle" style="max-width:320px;overflow:hidden;text-overflow:ellipsis">${esc(JSON.stringify(r.detail||{}))}</td></tr>`).join('')}</tbody></table></div>`;
   }catch(e){ box.innerHTML='<p class="subtle">Could not load the log.</p>'; } })();
 }
 async function renderAccessMgr(box){
