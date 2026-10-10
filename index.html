@@ -904,6 +904,8 @@ function winnerOf(m){
   const {a,b}=gamesWon(m);
   return a>b?1:(b>a?2:0);
 }
+// small gold trophy marker for winners — reused everywhere a result/leader is shown
+function goldTrophy(px){ return I.trophy.replace('<svg','<svg aria-label="Winner" style="width:'+(px||14)+'px;height:'+(px||14)+'px;color:var(--accent);flex:none;vertical-align:-2px;display:inline-block"'); }
 
 // ---- teams (franchises) — per-tournament ----
 const curTeams = () => state.teams.filter(t=>t.tournament_id===state.tournamentId);
@@ -1346,7 +1348,7 @@ function renderDashboard(el){
         <div class="card-title">Top Players</div>
         ${stats.length? `<div style="display:flex;flex-direction:column;gap:2px">${stats.slice(0,5).map((p,i)=>`
           <button class="pdrow" data-player="${esc(p.name)}" style="display:flex;align-items:center;gap:11px;padding:9px 6px;border-radius:8px;text-align:left;width:100%" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background='none'">
-            <span class="rankno ${i===0?'top':''}">${i===0?I.trophy.replace('<svg','<svg style=\'width:16px;height:16px\'')  :'#'+(i+1)}</span>
+            <span class="rankno ${i===0?'top':''}">${i===0?goldTrophy(16):'#'+(i+1)}</span>
             ${avatar(p.name,28)}
             <span class="pname" style="flex:1">${esc(p.name)}</span>
             <span class="pill w">${p.won}W</span><span class="pill l">${p.lost}L</span>
@@ -1359,9 +1361,9 @@ function renderDashboard(el){
           <div style="display:flex;align-items:center;gap:10px;font-size:13.5px">
             <span class="num" style="color:var(--muted);font-weight:800;width:26px">#${pairNoFor(m)}</span>
             <span style="flex:1;min-width:0">
-              <span style="font-weight:${w===1?'800':'600'};color:${w===1?'var(--win)':'inherit'}">${playersLinked(m.team1_p1,m.team1_p2)}</span>
+              <span style="font-weight:${w===1?'800':'600'};color:${w===1?'var(--win)':'inherit'}">${w===1?goldTrophy(13)+' ':''}${playersLinked(m.team1_p1,m.team1_p2)}</span>
               <span style="color:var(--muted);font-weight:800" class="num"> ${gamesWon(m).a}–${gamesWon(m).b} </span>
-              <span style="font-weight:${w===2?'800':'600'};color:${w===2?'var(--win)':'inherit'}">${playersLinked(m.team2_p1,m.team2_p2)}</span>
+              <span style="font-weight:${w===2?'800':'600'};color:${w===2?'var(--win)':'inherit'}">${w===2?goldTrophy(13)+' ':''}${playersLinked(m.team2_p1,m.team2_p2)}</span>
             </span>
           </div>`;}).join('')}</div>` : `<p class="subtle">No results recorded yet.</p>`}
       </div>
@@ -1451,7 +1453,7 @@ function matchRow(m, opts){
       <div class="team a ${w===1?'win':''}">
         <div class="chips">${ta?teamChip(ta):'<span class="tag">Team A</span>'}</div>
         <div class="players">${playersAv(m.team1_p1,m.team1_p2)}</div>
-        ${w===1?`<span class="wlabel">${I.check}Won</span>`:''}
+        ${w===1?`<span class="wlabel">${goldTrophy(14)}Won</span>`:''}
       </div>
       <div class="score">
         ${done?`<span class="s num ${w===2?'lo':''}">${gw.a}</span><span class="vs">–</span><span class="s num ${w===1?'lo':''}">${gw.b}</span>`
@@ -1460,7 +1462,7 @@ function matchRow(m, opts){
       <div class="team b ${w===2?'win':''}">
         <div class="chips" style="justify-content:flex-end">${tb?teamChip(tb):'<span class="tag">Team B</span>'}</div>
         <div class="players">${playersAv(m.team2_p1,m.team2_p2)}</div>
-        ${w===2?`<span class="wlabel" style="justify-content:flex-end">${I.check}Won</span>`:''}
+        ${w===2?`<span class="wlabel" style="justify-content:flex-end">${goldTrophy(14)}Won</span>`:''}
       </div>
     </div>
     <div class="mactions">
@@ -1508,7 +1510,7 @@ function renderPlayers(el){
       <div class="card-title">${I.trophy}Top Players${state.scope==='all'?' · all tournaments':''}</div>
       <div class="podium">${(top3.length>=3?[top3[1],top3[0],top3[2]]:top3).map(p=>`
         <button class="pod p${p.place} ${p.place===1?'first':''}" data-player="${esc(p.name)}">
-          <div class="medal">${p.place}</div>
+          <div class="medal">${p.place===1?goldTrophy(20):p.place}</div>
           ${avatar(p.name,p.place===1?66:54)}
           <div class="pn">${esc(p.name)}</div>
           <div class="rec"><span class="pill w">${p.won}W</span><span class="pill l">${p.lost}L</span></div>
@@ -1726,7 +1728,7 @@ function renderTeams(el){
       <div class="tablewrap" style="box-shadow:none;border:none">
         <table><thead><tr>${sh('rank','#')}${sh('team','Team')}${sh('played','P','n')}${sh('won','W','n')}${sh('lost','L','n')}${sh('pct','Win %')}${sh('diff','Pts Diff','n')}</tr></thead>
         <tbody>${rows.map(({t,ts},i)=>`
-          <tr><td><div class="rankcell"><span class="rankno ${col==='rank'&&i===0&&ts.played?'top':''}">${(col==='rank')?(ts.played?i+1:'·'):i+1}</span>${teamChip(t.name)}</div></td>
+          <tr><td><div class="rankcell"><span class="rankno ${col==='rank'&&i===0&&ts.played?'top':''}">${(col==='rank'&&i===0&&ts.played)?goldTrophy(16):((col==='rank')?(ts.played?i+1:'·'):i+1)}</span>${teamChip(t.name)}</div></td>
             <td class="n num">${ts.played}</td><td class="n num" style="color:${ts.won?'var(--win)':'var(--muted)'};font-weight:800">${ts.won}</td>
             <td class="n num" style="color:${ts.lost?'var(--danger)':'var(--muted)'}">${ts.lost}</td>
             <td>${ts.played?`<span class="num" style="font-weight:800">${Math.round(ts.pct*100)}%</span>`:'<span class="subtle">—</span>'}</td>
@@ -2135,7 +2137,7 @@ function openPlayerDetail(name, ms){
       <ul class="pd-list" style="margin-bottom:16px">${partners.map(p=>`<li><span style="font-weight:700">${esc(p.n)}</span><span class="mscore">${p.w}W–${p.g-p.w}L · ${Math.round(p.pct*100)}%</span></li>`).join('')}</ul>`:''}
       <div class="card-title" style="margin-bottom:9px">Match history</div>
       <ul class="pd-list">${hist.map(h=>{ const side=[h.m.team1_p1,h.m.team1_p2].includes(name)?1:2; const gw=gamesWon(h.m); const mg=side===1?gw.a:gw.b, og=side===1?gw.b:gw.a; const opp=oppOf(h.m,name); return `<li>
-        <span class="res ${h.won?'w':'l'}">${h.won?'W':'L'}</span>
+        <span class="res ${h.won?'w':'l'}" ${h.won?'style="display:inline-flex;align-items:center;gap:3px"':''}>${h.won?goldTrophy(11)+'W':'L'}</span>
         <span style="min-width:0">#${pairNoFor(h.m)} ${h.partner?'with '+esc(h.partner):''} <span style="color:var(--muted)">vs ${esc(team(opp[0],opp[1]))}</span></span>
         <span class="mscore">${mg}–${og}</span>
       </li>`;}).join('')}</ul>
