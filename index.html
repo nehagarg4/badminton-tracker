@@ -999,6 +999,14 @@ const tStageNames = t => tournamentStages(t).map(s=>s.name);
 /* ================================================================
    ANALYTICS
    ================================================================ */
+// ---- player ranking: win % first, sample-size-safe ----
+// Players with fewer than MIN_RANK_GAMES games rank BELOW qualified ones, so a single
+// lucky 1-game 100% can't top the Leader/podium. Raise this for larger tournaments.
+const MIN_RANK_GAMES = 2;
+function rankCmp(a,b){
+  const qa = (a.played>=MIN_RANK_GAMES)?1:0, qb = (b.played>=MIN_RANK_GAMES)?1:0;
+  return (qb-qa) || (b.pct-a.pct) || (b.won-a.won) || (b.diff-a.diff) || (b.played-a.played) || a.name.localeCompare(b.name);
+}
 function computeStats(matches){
   const P = {};
   const get = n => (P[n] || (P[n] = { name:n, played:0, won:0, lost:0, pf:0, pa:0, partners:{}, matches:[] }));
@@ -1012,7 +1020,7 @@ function computeStats(matches){
     rec(t1, pts.a, pts.b, w===1); rec(t2, pts.b, pts.a, w===2);
   });
   const arr = Object.values(P).map(p=>({ ...p, diff:p.pf-p.pa, pct: p.played? p.won/p.played : 0 }));
-  arr.sort((a,b)=> b.won-a.won || b.pct-a.pct || b.diff-a.diff || a.name.localeCompare(b.name));
+  arr.sort(rankCmp);
   return arr;
 }
 function allPlayerNames(){
@@ -1490,8 +1498,7 @@ function renderPlayers(el){
   if(q) roster=roster.filter(p=> p.name.toLowerCase().includes(q) || (teamOf(p.name)||'').toLowerCase().includes(q) );
   // sort
   const {col,dir}=playerSort;
-  const rankCmp=(a,b)=> b.won-a.won || b.pct-a.pct || b.played-a.played || b.diff-a.diff || a.name.localeCompare(b.name);
-  if(col==='rank') roster.sort(rankCmp);
+  if(col==='rank') roster.sort(rankCmp);   // shared win%-first, sample-size-safe comparator
   else if(col==='name') roster.sort((a,b)=>dir*a.name.localeCompare(b.name));
   else if(col==='team') roster.sort((a,b)=>dir*((teamOf(a.name)||'~~').localeCompare(teamOf(b.name)||'~~'))||a.name.localeCompare(b.name));
   else roster.sort((a,b)=>dir*((a[col]-b[col])||0)||a.name.localeCompare(b.name));
