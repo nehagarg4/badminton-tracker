@@ -1023,6 +1023,33 @@ function computeStats(matches){
   arr.sort(rankCmp);
   return arr;
 }
+// best partnerships: each completed doubles side is an unordered pair. Ranked with the SAME rankCmp.
+function computePairStats(matches){
+  const Q={};
+  matches.forEach(m=>{ const w=winnerOf(m); if(w===null||w===0) return; const pts=pointsOf(m);
+    [{pl:[m.team1_p1,m.team1_p2].filter(Boolean), mine:pts.a, theirs:pts.b, won:w===1},
+     {pl:[m.team2_p1,m.team2_p2].filter(Boolean), mine:pts.b, theirs:pts.a, won:w===2}].forEach(s=>{
+       if(s.pl.length<2) return;   // doubles only
+       const pair=s.pl.slice().sort((a,b)=>a.localeCompare(b)); const key=pair.join('~&~');
+       const q=Q[key]||(Q[key]={players:pair, played:0, won:0, lost:0, pf:0, pa:0});
+       q.played++; s.won?q.won++:q.lost++; q.pf+=s.mine; q.pa+=s.theirs;
+    }); });
+  return Object.values(Q).map(q=>({ ...q, name:q.players.join(' / '), diff:q.pf-q.pa, pct:q.played?q.won/q.played:0 })).sort(rankCmp);
+}
+// reusable "Top Pairs" card (used on the dashboard and the Players tab). Returns '' when there are no pairs yet.
+function pairsCardHTML(matches, topN){
+  const pairs=computePairStats(matches).filter(p=>p.played>0).slice(0, topN||5);
+  if(!pairs.length) return '';
+  const rows=pairs.map((p,i)=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 6px;border-radius:8px">
+      <span class="rankno ${i===0?'top':''}" style="flex:none">${i===0?goldTrophy(16):'#'+(i+1)}</span>
+      <span style="display:inline-flex;gap:3px;flex:none">${avatar(p.players[0],26)}${avatar(p.players[1],26)}</span>
+      <span class="pname" style="flex:1;min-width:0">${esc(p.players[0])} <span class="subtle">/</span> ${esc(p.players[1])}</span>
+      <span class="pill w">${p.won}W</span><span class="pill l">${p.lost}L</span>
+      <span class="num" style="width:44px;text-align:right;font-weight:800">${Math.round(p.pct*100)}%</span>
+    </div>`).join('');
+  return `<div class="card pad" style="margin-bottom:16px"><div class="card-title">${I.users}Top Pairs</div><div style="display:flex;flex-direction:column;gap:2px">${rows}</div></div>`;
+}
 function allPlayerNames(){
   const s=new Set();
   state.matches.forEach(m=>['team1_p1','team1_p2','team2_p1','team2_p2'].forEach(k=>{ if(m[k]) s.add(m[k]); }));
@@ -1375,7 +1402,8 @@ function renderDashboard(el){
             </span>
           </div>`;}).join('')}</div>` : `<p class="subtle">No results recorded yet.</p>`}
       </div>
-    </div>`;
+    </div>
+    ${pairsCardHTML(ms)}`;
   el.querySelectorAll('.pdrow').forEach(b=>b.onclick=()=>openPlayerDetail(b.dataset.player, ms));
   el.querySelectorAll('.tile[data-nav]').forEach(t=>t.onclick=()=>{ state.tab=t.dataset.nav; render(); });
   el.querySelectorAll('.tile[data-player]').forEach(t=>t.onclick=()=>openPlayerDetail(t.dataset.player, ms));
@@ -1524,6 +1552,7 @@ function renderPlayers(el){
           <div class="pct num">${Math.round(p.pct*100)}%</div>
         </button>`).join('')}</div>
     </div>`:''}
+    ${pairsCardHTML(ms)}
     ${capsAll.length?`<div class="card pad" style="margin-bottom:16px">
       <div class="card-title">${I.trophy}Captains · all tournaments</div>
       <div class="tablewrap" style="box-shadow:none;border:none">
