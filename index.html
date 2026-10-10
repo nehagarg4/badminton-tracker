@@ -312,6 +312,20 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .confirmbox .cscore{font-family:var(--disp);font-size:26px;color:var(--text);letter-spacing:1px;font-variant-numeric:tabular-nums;margin:8px 0 2px}
 .confirmbox .cres{font-family:var(--disp);color:var(--text2);font-size:15px;margin-top:4px}
 .confirmbox .cwin{margin-top:12px;font-weight:700;color:var(--win);background:var(--win-bg);border-radius:999px;padding:7px 16px;display:inline-block;font-size:14px}
+/* Score-entry modal → near-fullscreen with big touch targets on phones (desktop unchanged) */
+@media(max-width:480px){
+  .modal.score-modal{width:100%;max-width:none;height:100vh;height:100dvh;max-height:100dvh;border:none;border-radius:0;transform:none;display:flex;flex-direction:column}
+  .modal.score-modal .modal-head{padding:18px 20px 6px}
+  .modal.score-modal .modal-body{flex:1;display:flex;flex-direction:column;overflow-y:auto;padding:14px 20px calc(20px + env(safe-area-inset-bottom))}
+  .modal.score-modal .gamegrid{gap:12px;margin-top:10px}
+  .modal.score-modal .gamegrid .glbl{font-size:14px}
+  .modal.score-modal .gamegrid .gin{padding:22px 10px;font-size:40px;border-radius:14px;min-height:74px}
+  .modal.score-modal #tally{font-size:21px;margin:20px 0 2px}
+  .modal.score-modal .confirmbox{padding:22px}
+  .modal.score-modal .confirmbox .cscore{font-size:32px}
+  .modal.score-modal .modal-foot{margin-top:auto;padding-top:16px;gap:12px}
+  .modal.score-modal .modal-foot .btn{padding:18px 16px;font-size:17px;min-height:58px;border-radius:14px}
+}
 /* player detail */
 .pd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:18px}
 @media(max-width:460px){.pd-stats{grid-template-columns:repeat(2,1fr)}}
@@ -1796,7 +1810,7 @@ function emptyState(h,p,icon){ return `<div class="empty">${icon}<h3>${esc(h)}</
    MODALS
    ================================================================ */
 const overlay=document.getElementById('modalOverlay'), modalEl=document.getElementById('modal');
-function openModal(html){ modalEl.innerHTML=html; overlay.classList.add('show'); document.body.style.overflow='hidden';
+function openModal(html, cls){ modalEl.className='modal'+(cls?' '+cls:''); modalEl.innerHTML=html; overlay.classList.add('show'); document.body.style.overflow='hidden';
   modalEl.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',closeModal));
   const f=modalEl.querySelector('input,select'); if(f) setTimeout(()=>f.focus(),60);
 }
@@ -1909,7 +1923,7 @@ function openScoreModal(id, prefillGames){
           <button class="btn" id="backScore">Back</button>
           <button class="btn primary" id="confirmSave">${I.check}Confirm &amp; save</button>
         </div>
-      </div>`);
+      </div>`, 'score-modal');
     modalEl.querySelector('#backScore').onclick=()=>step(gs.length-1);   // back to the deciding game, scores kept
     modalEl.querySelector('#confirmSave').onclick=async()=>{
       if(!actor()){ openUserModal(commit); return; }   // ask name once, then save with attribution
@@ -1939,7 +1953,7 @@ function openScoreModal(id, prefillGames){
                   : (m.status==='completed' ? `<button class="btn danger" id="clearScore">Clear</button>` : `<button class="btn" data-close>Cancel</button>`) }
           <button class="btn primary" id="saveScore">${I.check}<span id="saveLbl">Confirm &amp; next game</span></button>
         </div>
-      </div>`);
+      </div>`, 'score-modal');
     const g1=modalEl.querySelector('.g1'), g2=modalEl.querySelector('.g2');
     const refresh=()=>{
       const base=tallyOf(gi); let a=base.a, b=base.b;
