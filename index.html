@@ -1005,7 +1005,7 @@ const tStageNames = t => tournamentStages(t).map(s=>s.name);
 const MIN_RANK_GAMES = 2;
 function rankCmp(a,b){
   const qa = (a.played>=MIN_RANK_GAMES)?1:0, qb = (b.played>=MIN_RANK_GAMES)?1:0;
-  return (qb-qa) || (b.pct-a.pct) || (b.won-a.won) || (b.diff-a.diff) || (b.played-a.played) || a.name.localeCompare(b.name);
+  return (qb-qa) || (b.pct-a.pct) || (b.won-a.won) || (b.diff-a.diff) || (b.played-a.played) || ((b.pf||0)-(a.pf||0)) || a.name.localeCompare(b.name);
 }
 function computeStats(matches){
   const P = {};
