@@ -120,6 +120,21 @@ create policy "images write"  on storage.objects for insert with check (bucket_i
 create policy "images update" on storage.objects for update using (bucket_id = 'images');
 create policy "images delete" on storage.objects for delete using (bucket_id = 'images');
 
+-- ---------- gallery (per-tournament photos + YouTube links) ----------
+create table if not exists gallery (
+  id            uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references tournaments(id) on delete cascade,
+  kind          text not null check (kind in ('photo','video')),
+  url           text not null,
+  caption       text,
+  added_by      text,
+  created_at    timestamptz not null default now()
+);
+create index if not exists gallery_tournament_idx on gallery(tournament_id, created_at desc);
+alter table gallery enable row level security;
+drop policy if exists "public gallery" on gallery;
+create policy "public gallery" on gallery for all using (true) with check (true);
+
 -- ============================================================
 --  Seed: global players, then JCC Badminton Series 2026 — Fall Edition
 --  (teams, rosters and 14 matches scoped to that tournament)
