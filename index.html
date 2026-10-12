@@ -1457,8 +1457,10 @@ function openVideoModal(vid, caption){
       <iframe src="https://www.youtube-nocookie.com/embed/${esc(vid)}?rel=0" title="video" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen style="position:absolute;inset:0;width:100%;height:100%;border:0"></iframe>
     </div></div>`);
 }
-function galleryCard(g, canEdit){
-  const del = canEdit?`<button class="galdel" data-gid="${esc(g.id)}" title="Remove" aria-label="Remove">✕</button>`:'';
+// you can remove an item you added (by name), or if you're an admin of this tournament (moderation)
+function canGalRemove(g){ const me=actor(); return isAdminFor(g.tournament_id||state.tournamentId) || (!!me && !!g.added_by && String(me).toLowerCase()===String(g.added_by).toLowerCase()); }
+function galleryCard(g){
+  const del = canGalRemove(g)?`<button class="galdel" data-gid="${esc(g.id)}" title="Remove" aria-label="Remove">✕</button>`:'';
   const cap = g.caption?`<div class="galcap">${esc(g.caption)}</div>`:'';
   const by  = g.added_by?`<span class="galby subtle">${esc(g.added_by)}</span>`:'';
   if(g.kind==='video'){
@@ -1471,24 +1473,25 @@ function galleryCard(g, canEdit){
 function renderGallery(el){
   const t=curTournament();
   const items=(state.gallery||[]).filter(g=>g.tournament_id===state.tournamentId);
-  const canEdit=(!useDB)||isAdminFor(state.tournamentId);
   el.innerHTML=`
     <div class="sectionhead"><h2>Gallery</h2><div class="spacer"></div>
-      ${canEdit?`<button class="btn sm" id="galAddPhoto">${I.plus}Add photo</button><button class="btn sm" id="galAddVideo">${I.plus}YouTube link</button>`:''}
+      ${t?`<button class="btn sm" id="galAddPhoto">${I.plus}Add photo</button><button class="btn sm" id="galAddVideo">${I.plus}YouTube link</button>`:''}
     </div>
     ${!t? emptyState('No tournament selected','Create or pick a tournament first.',I.users)
-      : (items.length? `<div class="gallerygrid">${items.map(g=>galleryCard(g,canEdit)).join('')}</div>`
-        : emptyState('No photos or videos yet', canEdit?'Add a photo or paste a YouTube link above.':'Check back soon — admins can add photos and videos.', I.users))}`;
+      : (items.length? `<div class="gallerygrid">${items.map(g=>galleryCard(g)).join('')}</div>`
+        : emptyState('No photos or videos yet','Add a photo or paste a YouTube link above — anyone can contribute.', I.users))}`;
   el.querySelector('#galAddPhoto')?.addEventListener('click',galAddPhoto);
   el.querySelector('#galAddVideo')?.addEventListener('click',galAddVideo);
   el.querySelectorAll('.galcard[data-photo]').forEach(c=>c.addEventListener('click',e=>{ if(e.target.closest('.galdel')) return; openLightbox(c.dataset.photo); }));
   el.querySelectorAll('.galcard.vid').forEach(c=>c.addEventListener('click',e=>{ if(e.target.closest('.galdel')) return; const v=c.dataset.vid; if(v) openVideoModal(v,c.dataset.cap); else window.open(c.dataset.url,'_blank','noopener'); }));
-  el.querySelectorAll('.galdel').forEach(b=>b.addEventListener('click',async e=>{ e.stopPropagation(); if(!requireAdmin()) return; if(!confirm('Remove this item?')) return;
+  el.querySelectorAll('.galdel').forEach(b=>b.addEventListener('click',async e=>{ e.stopPropagation();
+    const g=(state.gallery||[]).find(x=>x.id===b.dataset.gid); if(!g||!canGalRemove(g)){ toast('You can only remove items you added'); return; }
+    if(!confirm('Remove this item?')) return;
     try{ await store.removeGalleryItem(b.dataset.gid); await loadAll(); render(); toast('Removed'); }catch(err){ toast('Could not remove'); } }));
 }
 const galErrHint = e => /(relation|exist|schema|not find)/i.test((e&&e.message)||'') ? ' — run migrate-gallery.sql' : '';
 function galAddPhoto(){
-  if(!requireAdmin()) return;
+  if(!actor()){ openUserModal(galAddPhoto); return; }   // anyone can add; need a name to attribute it
   (async()=>{ const f=await pickImage(); if(!f) return;
     let dataUrl; try{ dataUrl=await resizeImage(f,1600,0.85,false); }catch(e){ toast(e.message||'Could not read that image'); return; }
     openModal(`<div class="modal-head"><h3>Add photo</h3><button class="x" data-close>✕</button></div>
@@ -1506,7 +1509,7 @@ function galAddPhoto(){
   })();
 }
 function galAddVideo(){
-  if(!requireAdmin()) return;
+  if(!actor()){ openUserModal(galAddVideo); return; }   // anyone can add; need a name to attribute it
   openModal(`<div class="modal-head"><h3>Add YouTube video</h3><button class="x" data-close>✕</button></div>
     <div class="modal-body">
       <div class="err" id="galVErr"></div>
