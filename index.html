@@ -300,21 +300,21 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .gamegrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:10px;align-items:center}
 .gamegrid .glbl{font-family:var(--head);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center;line-height:1.2}
 .gamegrid .glbl.a{color:var(--teamA)} .gamegrid .glbl.b{color:var(--teamB)}
-/* score sliders — point-by-point entry, mobile-first */
-.scoreins{display:flex;flex-direction:column;gap:16px;margin-top:6px}
+/* score number-wheels — swipe up/down (slot-machine) point entry, mobile-first */
+.scoreins{display:flex;flex-direction:column;gap:10px;margin-top:4px}
 .scorein{text-align:center}
-.scorein .glbl{font-family:var(--head);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.2}
+.scorein .glbl{font-family:var(--head);font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;line-height:1.2;margin-bottom:2px}
 .scorein .glbl.a{color:var(--teamA)} .scorein .glbl.b{color:var(--teamB)}
-.scorein .scval{font-family:var(--disp);font-size:48px;line-height:1;margin:2px 0 8px}
-.scctl{display:flex;align-items:center;gap:12px}
-.scctl input[type=range]{flex:1;height:40px;-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}
-.scctl input[type=range]::-webkit-slider-runnable-track{height:10px;border-radius:999px;background:var(--surface2);border:1px solid var(--border2)}
-.scctl input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:34px;height:34px;margin-top:-13px;border-radius:50%;background:var(--accent);border:3px solid var(--bg,#0b1020);box-shadow:0 2px 8px rgba(0,0,0,.45)}
-.scctl input[type=range]::-moz-range-track{height:10px;border-radius:999px;background:var(--surface2);border:1px solid var(--border2)}
-.scctl input[type=range]::-moz-range-thumb{width:34px;height:34px;border-radius:50%;background:var(--accent);border:3px solid var(--bg,#0b1020)}
-.scbtn{flex:none;width:48px;height:48px;border-radius:50%;border:1px solid var(--border2);background:var(--surface);color:var(--text);font-size:27px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-user-select:none;user-select:none}
-.scbtn:active{background:var(--surface2);transform:scale(.94)}
-@media(max-width:520px){ .scorein .scval{font-size:62px} .scbtn{width:54px;height:54px;font-size:32px} .scctl input[type=range]::-webkit-slider-thumb{width:40px;height:40px;margin-top:-16px} .scctl input[type=range]::-moz-range-thumb{width:40px;height:40px} }
+.wheel{position:relative;height:174px;width:160px;margin:0 auto;overflow:hidden;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 28%,#000 72%,transparent);
+  mask-image:linear-gradient(to bottom,transparent,#000 28%,#000 72%,transparent)}
+.wscroll{height:100%;overflow-y:scroll;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;touch-action:pan-y}
+.wscroll::-webkit-scrollbar{display:none}
+.wpad{height:58px}
+.wnum{height:58px;line-height:58px;text-align:center;font-family:var(--disp);font-size:28px;color:var(--text2);opacity:.45;cursor:pointer;transition:opacity .12s,color .12s,font-size .12s}
+.wnum.on{opacity:1;color:var(--text);font-size:44px}
+.wband{position:absolute;left:18px;right:18px;top:50%;height:58px;transform:translateY(-50%);border-top:1.5px solid var(--border2);border-bottom:1.5px solid var(--border2);border-radius:10px;pointer-events:none}
+@media(max-width:520px){ .wheel{height:198px;width:190px} .wpad{height:66px} .wnum{height:66px;line-height:66px;font-size:32px} .wnum.on{font-size:52px} .wband{height:66px} }
 .gamegrid .gnum{font-family:var(--head);font-size:13px;font-weight:700;color:var(--text2);text-transform:uppercase}
 .gamegrid .gin{width:100%;text-align:center;padding:11px;border:1px solid var(--border2);border-radius:var(--radius-xs);background:var(--surface);font-family:var(--disp);font-size:20px;color:var(--text)}
 .gamegrid .gin:focus{outline:none;border-color:var(--accent-bd);box-shadow:0 0 0 3px var(--accent-bg)}
@@ -2102,21 +2102,23 @@ function openScoreModal(id, prefillGames){
   // Record ONE game at a time; advance on confirm until a team takes the match (games held in memory only)
   const step=(gi)=>{
     const cur=games[gi]||{s1:'',s2:''};
+    const mx=(pts||21)+10;
+    const nums=Array.from({length:mx+1},(_,n)=>`<div class="wnum" data-v="${n}">${n}</div>`).join('');
+    const wheelCol=(side,val)=>`<div class="wheel"><input class="gin ${side}" type="hidden" value="${val||0}"><div class="wscroll"><div class="wpad"></div>${nums}<div class="wpad"></div></div><div class="wband"></div></div>`;
     openModal(`
       <div class="modal-head"><h3>Record score · Match ${pairNoFor(m)} · Game ${gi+1}</h3><button class="x" data-close>✕</button></div>
       <div class="modal-body">
         <div class="err" id="sErr"></div>
         <p class="subtle" style="text-align:center;margin:-2px 0 12px">Best of ${bo} — first to ${need} games · ${pts} points/game (deuce at ${pts-1}–${pts-1}: win by 2)</p>
+        <p class="subtle" style="text-align:center;margin:-6px 0 10px;font-size:12px">Swipe each wheel up/down to set the score</p>
         <div class="scoreins">
           <div class="scorein">
             <div class="glbl a">${esc(team(m.team1_p1,m.team1_p2))}</div>
-            <div class="scval num" id="g1val">${cur.s1||0}</div>
-            <div class="scctl"><button type="button" class="scbtn" data-d="g1:-1" aria-label="minus">−</button><input class="gin g1" type="range" min="0" max="${(pts||21)+10}" step="1" value="${cur.s1||0}"><button type="button" class="scbtn" data-d="g1:1" aria-label="plus">+</button></div>
+            ${wheelCol('g1', cur.s1)}
           </div>
           <div class="scorein">
             <div class="glbl b">${esc(team(m.team2_p1,m.team2_p2))}</div>
-            <div class="scval num" id="g2val">${cur.s2||0}</div>
-            <div class="scctl"><button type="button" class="scbtn" data-d="g2:-1" aria-label="minus">−</button><input class="gin g2" type="range" min="0" max="${(pts||21)+10}" step="1" value="${cur.s2||0}"><button type="button" class="scbtn" data-d="g2:1" aria-label="plus">+</button></div>
+            ${wheelCol('g2', cur.s2)}
           </div>
         </div>
         <div id="tally" class="tallyline"></div>
@@ -2128,8 +2130,6 @@ function openScoreModal(id, prefillGames){
       </div>`, 'score-modal');
     const g1=modalEl.querySelector('.g1'), g2=modalEl.querySelector('.g2');
     const refresh=()=>{
-      modalEl.querySelector('#g1val').textContent=g1.value;
-      modalEl.querySelector('#g2val').textContent=g2.value;
       const base=tallyOf(gi); let a=base.a, b=base.b;
       const w=(g1.value!==''&&g2.value!=='')?gameWin({s1:parseInt(g1.value,10),s2:parseInt(g2.value,10)},pts):0;
       if(w===1)a++; else if(w===2)b++;
@@ -2140,7 +2140,23 @@ function openScoreModal(id, prefillGames){
       modalEl.querySelector('#saveLbl').innerHTML=(decided||last)?'Confirm &amp; save result':'Confirm &amp; next game';
     };
     g1.addEventListener('input',refresh); g2.addEventListener('input',refresh); refresh();
-    modalEl.querySelectorAll('.scbtn[data-d]').forEach(btn=>btn.onclick=()=>{ const [sel,delta]=btn.dataset.d.split(':'); const inp=modalEl.querySelector('.'+sel); const mx=parseInt(inp.max,10); inp.value=Math.max(0,Math.min(mx,(parseInt(inp.value,10)||0)+parseInt(delta,10))); inp.dispatchEvent(new Event('input',{bubbles:true})); });
+    // number-wheel: swipe/scroll to the value; snaps to each integer; tap a number to jump
+    const setupWheel=(inp)=>{
+      const wrap=inp.closest('.wheel'), scroll=wrap.querySelector('.wscroll');
+      const rowH=()=> (wrap.querySelector('.wnum')||{}).offsetHeight || 58;
+      const valAt=()=> Math.max(0,Math.min(mx,Math.round(scroll.scrollTop/rowH())));
+      const mark=v=>{ const p=wrap.querySelector('.wnum.on'); if(p)p.classList.remove('on'); const el=wrap.querySelector('.wnum[data-v="'+v+'"]'); if(el)el.classList.add('on'); };
+      const setVal=v=>{ if(String(v)!==inp.value){ inp.value=v; inp.dispatchEvent(new Event('input',{bubbles:true})); } };
+      const initPos=()=>{ const v=parseInt(inp.value,10)||0; scroll.scrollTop=v*rowH(); mark(v); };
+      initPos(); setTimeout(initPos,0); requestAnimationFrame(initPos);   // position on the current value once laid out
+      let snapT=null;
+      scroll.addEventListener('scroll',()=>{   // track live (no rAF — works even when the tab is backgrounded)
+        const v=valAt(); mark(v); setVal(v);
+        clearTimeout(snapT); snapT=setTimeout(()=>{ scroll.scrollTo({top:valAt()*rowH(), behavior:'smooth'}); }, 110);   // snap to nearest on release
+      });
+      wrap.querySelectorAll('.wnum').forEach(n=>n.addEventListener('click',()=>scroll.scrollTo({top:parseInt(n.dataset.v,10)*rowH(), behavior:'smooth'})));
+    };
+    setupWheel(g1); setupWheel(g2);
     if(modalEl.querySelector('#backScore')) modalEl.querySelector('#backScore').onclick=()=>step(gi-1);   // previous game, score kept
     modalEl.querySelector('#saveScore').onclick=()=>{
       const err=modalEl.querySelector('#sErr'); const s1=parseInt(g1.value,10), s2=parseInt(g2.value,10);
