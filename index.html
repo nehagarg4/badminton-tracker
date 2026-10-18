@@ -2059,9 +2059,7 @@ function openScoreModal(id, prefillGames){
     const commit=async()=>{ try{
         await store.updateMatch(id,{games:gs, score1:null, score2:null, status:'completed', ...stampBy()});
         closeModal(); await loadAll(); render();
-        const nextId=nextPendingMatchAfter(id);
-        if(nextId){ toast('Result saved'); openScoreModal(nextId); }   // one at a time: open the next match needing a score
-        else toast('All matches recorded 🎉');
+        toast('Result saved');   // record one match at a time; stay on the Matches list (matches are played sequentially)
       }catch(e){ const ce=modalEl.querySelector('#cErr'); if(ce){ ce.textContent='Could not save: '+(e.message||e); ce.classList.add('show'); } } };
     openModal(`
       <div class="modal-head"><h3>Confirm result · Match ${pairNoFor(m)}</h3><button class="x" data-close>✕</button></div>
